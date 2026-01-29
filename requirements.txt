@@ -1,0 +1,17 @@
+# AI邮件督导系统依赖包 - 简化版本
+
+# Web框架
+fastapi
+uvicorn
+
+# 数据验证和序列化  
+pydantic[email]
+
+# HTTP客户端
+httpx
+
+# 数据库
+supabase
+
+# 环境变量管理
+python-dotenv
