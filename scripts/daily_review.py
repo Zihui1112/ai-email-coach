@@ -5,7 +5,6 @@ import os
 import sys
 import requests
 from datetime import datetime
-from supabase import create_client
 
 # 添加父目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,12 +23,22 @@ def send_daily_review():
         return False
     
     try:
-        # 连接数据库
-        supabase = create_client(supabase_url, supabase_key)
+        # 使用 REST API 直接查询数据库（避免 HTTP/2 问题）
+        headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json"
+        }
         
         # 获取今日任务
-        response = supabase.table('tasks').select('*').eq('user_email', user_email).eq('status', 'active').execute()
-        tasks = response.data
+        query_url = f"{supabase_url}/rest/v1/tasks?user_email=eq.{user_email}&status=eq.active&select=*"
+        db_response = requests.get(query_url, headers=headers, timeout=30)
+        
+        if db_response.status_code != 200:
+            print(f"❌ 数据库查询失败: {db_response.status_code}")
+            return False
+        
+        tasks = db_response.json()
         
         # 生成消息内容
         content = "🌙 晚上好！今天的任务完成情况如何？\n\n"

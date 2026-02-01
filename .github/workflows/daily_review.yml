@@ -21,7 +21,7 @@ jobs:
     
     - name: 安装依赖
       run: |
-        pip install requests supabase
+        pip install requests
     
     - name: 发送每日复盘
       env:

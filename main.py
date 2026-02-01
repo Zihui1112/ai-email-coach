@@ -198,6 +198,18 @@ Q4(4): 不重要且不紧急
                     result = response.json()
                     content = result["choices"][0]["message"]["content"]
                     
+                    # 清理markdown代码块标记
+                    if content.startswith("```"):
+                        # 移除开头的```json或```
+                        content = content.split("```")[1]
+                        if content.startswith("json"):
+                            content = content[4:]
+                        # 移除结尾的```
+                        if "```" in content:
+                            content = content.split("```")[0]
+                    
+                    content = content.strip()
+                    
                     # 尝试解析JSON
                     try:
                         parsed_data = json.loads(content)
@@ -209,8 +221,9 @@ Q4(4): 不重要且不紧急
                             is_backlog_request=parsed_data.get("is_backlog_request", False),
                             confidence_score=parsed_data.get("confidence_score", 0.8)
                         )
-                    except json.JSONDecodeError:
-                        logger.error(f"LLM返回的JSON格式无效: {content}")
+                    except json.JSONDecodeError as e:
+                        logger.error(f"LLM返回的JSON格式无效: {content[:200]}...")
+                        logger.error(f"JSON解析错误: {e}")
                         return ParseResult(task_updates=[], confidence_score=0.0)
                 
                 else:

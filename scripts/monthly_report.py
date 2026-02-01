@@ -3,15 +3,13 @@
 """
 import os
 import sys
-import asyncio
-import httpx
+import requests
 from datetime import datetime, timedelta
-from supabase import create_client
 
 # 添加父目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-async def send_monthly_report():
+def send_monthly_report():
     """发送月报"""
     print(f"[{datetime.now()}] 开始生成月报")
     
@@ -21,24 +19,30 @@ async def send_monthly_report():
     supabase_key = os.getenv("SUPABASE_KEY")
     
     try:
-        # 连接数据库
-        supabase = create_client(supabase_url, supabase_key)
+        # 使用 REST API 直接查询数据库（避免 HTTP/2 问题）
+        headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json"
+        }
         
         # 获取本月数据（过去30天）
         month_ago = (datetime.now() - timedelta(days=30)).isoformat()
         
         # 查询本月完成的任务
-        completed_response = supabase.table('tasks').select('*').eq(
-            'user_email', user_email
-        ).eq('status', 'completed').gte('updated_at', month_ago).execute()
+        completed_url = f"{supabase_url}/rest/v1/tasks?user_email=eq.{user_email}&status=eq.completed&updated_at=gte.{month_ago}&select=*"
+        completed_response = requests.get(completed_url, headers=headers, timeout=30)
         
         # 查询所有任务
-        all_response = supabase.table('tasks').select('*').eq(
-            'user_email', user_email
-        ).execute()
+        all_url = f"{supabase_url}/rest/v1/tasks?user_email=eq.{user_email}&select=*"
+        all_response = requests.get(all_url, headers=headers, timeout=30)
         
-        completed_tasks = completed_response.data
-        all_tasks = all_response.data
+        if completed_response.status_code != 200 or all_response.status_code != 200:
+            print(f"❌ 数据库查询失败")
+            return False
+        
+        completed_tasks = completed_response.json()
+        all_tasks = all_response.json()
         
         # 统计数据
         total_completed = len(completed_tasks)
@@ -96,16 +100,19 @@ async def send_monthly_report():
             }
         }
         
-        # 使用HTTP/1.1避免HTTP/2协议问题
-        async with httpx.AsyncClient(timeout=30.0, http2=False) as client:
-            response = await client.post(webhook_url, json=message)
-            
-            if response.status_code == 200:
+        response = requests.post(webhook_url, json=message, timeout=30)
+        
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("StatusCode") == 0:
                 print("✅ 月报发送成功")
                 return True
             else:
-                print(f"❌ 月报发送失败: {response.status_code}")
+                print(f"❌ 飞书返回错误: {result}")
                 return False
+        else:
+            print(f"❌ HTTP请求失败: {response.status_code}")
+            return False
                 
     except Exception as e:
         print(f"❌ 生成月报失败: {e}")
@@ -114,5 +121,5 @@ async def send_monthly_report():
         return False
 
 if __name__ == "__main__":
-    success = asyncio.run(send_monthly_report())
+    success = send_monthly_report()
     sys.exit(0 if success else 1)
