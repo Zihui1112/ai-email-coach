@@ -13,10 +13,11 @@ def send_monthly_report():
     """发送月报"""
     print(f"[{datetime.now()}] 开始生成月报")
     
-    webhook_url = os.getenv("FEISHU_WEBHOOK_URL")
-    user_email = os.getenv("EMAIL_163_USERNAME")
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_KEY")
+    # 获取环境变量并清理空格和换行符
+    webhook_url = os.getenv("FEISHU_WEBHOOK_URL", "").strip()
+    user_email = os.getenv("EMAIL_163_USERNAME", "").strip()
+    supabase_url = os.getenv("SUPABASE_URL", "").strip()
+    supabase_key = os.getenv("SUPABASE_KEY", "").strip()
     
     try:
         # 使用 REST API 直接查询数据库（避免 HTTP/2 问题）

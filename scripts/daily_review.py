@@ -13,10 +13,11 @@ def send_daily_review():
     """发送每日复盘提醒"""
     print(f"[{datetime.now()}] 开始发送每日复盘提醒")
     
-    webhook_url = os.getenv("FEISHU_WEBHOOK_URL")
-    user_email = os.getenv("EMAIL_163_USERNAME")
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_KEY")
+    # 获取环境变量并清理空格和换行符
+    webhook_url = os.getenv("FEISHU_WEBHOOK_URL", "").strip()
+    user_email = os.getenv("EMAIL_163_USERNAME", "").strip()
+    supabase_url = os.getenv("SUPABASE_URL", "").strip()
+    supabase_key = os.getenv("SUPABASE_KEY", "").strip()
     
     if not all([webhook_url, user_email, supabase_url, supabase_key]):
         print("❌ 环境变量未配置完整，请检查.env文件")
