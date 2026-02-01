@@ -102,8 +102,9 @@ async def send_weekly_report():
             }
         }
         
-        async with httpx.AsyncClient() as client:
-            response = await client.post(webhook_url, json=message, timeout=30.0)
+        # 使用HTTP/1.1避免HTTP/2协议问题
+        async with httpx.AsyncClient(timeout=30.0, http2=False) as client:
+            response = await client.post(webhook_url, json=message)
             
             if response.status_code == 200:
                 print("✅ 周报发送成功")
