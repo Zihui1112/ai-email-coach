@@ -21,7 +21,7 @@ jobs:
     
     - name: 安装依赖
       run: |
-        pip install httpx python-dotenv supabase
+        pip install requests supabase
     
     - name: 发送每日复盘
       env:
