@@ -1,0 +1,34 @@
+name: 每日复盘提醒
+
+on:
+  schedule:
+    # 每天22:00 (UTC+8 = 14:00 UTC)
+    - cron: '0 14 * * *'
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  send-review:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v3
+    
+    - name: 设置Python环境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: 安装依赖
+      run: |
+        pip install httpx python-dotenv supabase-py
+    
+    - name: 发送每日复盘
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+        EMAIL_163_USERNAME: ${{ secrets.EMAIL_163_USERNAME }}
+      run: |
+        python github_actions_coach.py

@@ -432,6 +432,113 @@ class EmailGenerator:
         
         return [Task(**task) for task in result.data]
     
+    async def generate_daily_review_email(self, user_email: str, tasks: List[Task]) -> str:
+        """生成每日复盘邮件"""
+        config = await self.get_user_config(user_email)
+        
+        if config.persona == Persona.TOXIC:
+            greeting = "又到了每日复盘时间，看看你今天都干了些什么..."
+        elif config.persona == Persona.WARM:
+            greeting = "亲爱的，辛苦了一天！让我们一起回顾今天的成果吧～"
+        else:
+            greeting = "今日复盘时间，请回顾你的任务完成情况："
+        
+        content = f"""
+{greeting}
+
+📊 今日任务清单：
+"""
+        
+        completed_count = 0
+        total_count = len(tasks)
+        
+        for task in tasks:
+            progress_bar = await self.format_progress_bar(task.progress_percentage)
+            status_icon = "✅" if task.progress_percentage == 100 else "⏳"
+            content += f"{status_icon} {task.task_name}\n   {progress_bar}\n"
+            
+            if task.progress_percentage == 100:
+                completed_count += 1
+        
+        completion_rate = (completed_count / total_count * 100) if total_count > 0 else 0
+        
+        content += f"\n📈 完成率: {completion_rate:.0f}% ({completed_count}/{total_count})\n"
+        
+        content += "\n💭 请回复此邮件告诉我：\n"
+        content += "1. 今天完成了哪些任务？进度如何？\n"
+        content += "2. 明天计划做什么？\n"
+        content += "3. 有哪些任务需要暂缓到待办池？\n"
+        
+        return content
+    
+    async def generate_weekly_report(self, user_email: str, week_tasks: List[Task]) -> str:
+        """生成周度统计报告"""
+        config = await self.get_user_config(user_email)
+        
+        if config.persona == Persona.TOXIC:
+            greeting = "一周又过去了，来看看你这周的战绩如何..."
+        elif config.persona == Persona.WARM:
+            greeting = "这一周你辛苦了！让我们一起看看你的进步～"
+        else:
+            greeting = "本周统计报告："
+        
+        # 统计数据
+        total_tasks = len(week_tasks)
+        completed_tasks = len([t for t in week_tasks if t.status == TaskStatus.COMPLETED])
+        completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+        
+        # 按象限统计
+        q1_tasks = len([t for t in week_tasks if t.quadrant == 1])
+        q2_tasks = len([t for t in week_tasks if t.quadrant == 2])
+        q3_tasks = len([t for t in week_tasks if t.quadrant == 3])
+        q4_tasks = len([t for t in week_tasks if t.quadrant == 4])
+        
+        content = f"""
+{greeting}
+
+📊 本周数据概览：
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+• 总任务数: {total_tasks}
+• 已完成: {completed_tasks}
+• 完成率: {completion_rate:.1f}%
+
+📈 象限分布：
+• Q1 (重要紧急): {q1_tasks} 个任务
+• Q2 (重要不紧急): {q2_tasks} 个任务
+• Q3 (不重要紧急): {q3_tasks} 个任务
+• Q4 (不重要不紧急): {q4_tasks} 个任务
+
+"""
+        
+        # 根据完成率给出反馈
+        if completion_rate >= 80:
+            if config.persona == Persona.TOXIC:
+                feedback = "哟，这周表现还不错嘛，难得看你这么努力！"
+            elif config.persona == Persona.WARM:
+                feedback = "太棒了！你这周的表现非常出色，继续保持！"
+            else:
+                feedback = "本周完成率优秀，继续保持。"
+        elif completion_rate >= 50:
+            if config.persona == Persona.TOXIC:
+                feedback = "勉强及格吧，下周能不能再努力点？"
+            elif config.persona == Persona.WARM:
+                feedback = "你已经做得很好了，下周我们一起加油！"
+            else:
+                feedback = "本周完成率良好，仍有提升空间。"
+        else:
+            if config.persona == Persona.TOXIC:
+                feedback = "这周是在摸鱼吗？下周再这样就别怪我不客气了！"
+            elif config.persona == Persona.WARM:
+                feedback = "这周可能有些困难，没关系，下周我们重新开始！"
+            else:
+                feedback = "本周完成率偏低，建议调整任务规划。"
+        
+        content += f"💬 本周点评：\n{feedback}\n"
+        content += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        content += "下周继续加油！💪"
+        
+        return content
+    
     async def send_email(self, to_email: str, subject: str, content: str) -> bool:
         """发送邮件（使用多平台通知管理器）"""
         try:
