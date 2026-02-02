@@ -321,6 +321,31 @@ def check_and_process_email_reply():
             else:
                 print(f"❌ 发送飞书消息失败: {response.status_code}")
         
+        # 同时发送反馈邮件
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            
+            print("\n发送反馈邮件...")
+            
+            msg = MIMEMultipart()
+            msg['From'] = email_username
+            msg['To'] = email_username
+            msg['Subject'] = "📊 任务更新反馈"
+            
+            msg.attach(MIMEText(feedback_content, 'plain', 'utf-8'))
+            
+            server = smtplib.SMTP_SSL("smtp.163.com", 465)
+            server.login(email_username, email_password)
+            server.send_message(msg)
+            server.quit()
+            
+            print("✅ 反馈邮件发送成功")
+            
+        except Exception as e:
+            print(f"❌ 反馈邮件发送失败: {e}")
+        
         print("\n✅ 邮件回复处理完成")
         return True
         
