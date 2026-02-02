@@ -106,17 +106,17 @@ def check_and_process_email_reply():
                 print(f"\n检查邮件 #{i}: {subject}")
                 print(f"时间: {date_str}")
                 
-                # 检查是否是今天的邮件
+                # 检查是否是最近的邮件（最近2小时内）
                 try:
                     from email.utils import parsedate_to_datetime
                     email_date = parsedate_to_datetime(date_str)
                     now = datetime.now(email_date.tzinfo)
                     
-                    # 只处理今天22:00之后的邮件
-                    today_22 = now.replace(hour=22, minute=0, second=0, microsecond=0)
+                    # 只处理最近2小时内的邮件
+                    two_hours_ago = now - timedelta(hours=2)
                     
-                    if email_date < today_22:
-                        print(f"  → 邮件时间早于今天22:00，跳过")
+                    if email_date < two_hours_ago:
+                        print(f"  → 邮件时间早于2小时前，跳过")
                         continue
                     
                     # 解析邮件内容
@@ -141,7 +141,7 @@ def check_and_process_email_reply():
         
         # 如果没有找到回复
         if not latest_reply:
-            print("\n没有找到今天22:00后的回复邮件")
+            print("\n没有找到最近2小时内的回复邮件")
             
             # 发送提醒到飞书
             if webhook_url:
@@ -152,8 +152,9 @@ def check_and_process_email_reply():
                                "没有检测到你的回复邮件。\n\n"
                                "如果你已经回复了，请确认：\n"
                                "1. 回复的是 15302814198@163.com\n"
-                               "2. 邮件已成功发送\n\n"
-                               "明天继续！😊"
+                               "2. 邮件已成功发送\n"
+                               "3. 回复时间在最近2小时内\n\n"
+                               "或者稍后再试！😊"
                     }
                 }
                 requests.post(webhook_url, json=message, timeout=30)
