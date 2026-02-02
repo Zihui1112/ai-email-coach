@@ -37,6 +37,10 @@ def send_daily_review():
         
         if db_response.status_code != 200:
             print(f"❌ 数据库查询失败: {db_response.status_code}")
+            print(f"响应内容: {db_response.text}")
+            if db_response.status_code == 401:
+                print("⚠️ 认证失败！请检查 SUPABASE_KEY 是否使用了 service_role key")
+                print("提示：需要使用 service_role key，而不是 anon key")
             return False
         
         tasks = db_response.json()

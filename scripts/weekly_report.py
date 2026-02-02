@@ -44,6 +44,13 @@ def send_weekly_report():
         
         if completed_response.status_code != 200 or active_response.status_code != 200 or backlog_response.status_code != 200:
             print(f"❌ 数据库查询失败")
+            if completed_response.status_code == 401:
+                print(f"完成任务查询: {completed_response.status_code} - {completed_response.text}")
+                print("⚠️ 认证失败！请使用 service_role key")
+            if active_response.status_code == 401:
+                print(f"进行中任务查询: {active_response.status_code} - {active_response.text}")
+            if backlog_response.status_code == 401:
+                print(f"待办池查询: {backlog_response.status_code} - {backlog_response.text}")
             return False
         
         completed_tasks = completed_response.json()

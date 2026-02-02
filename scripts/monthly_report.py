@@ -40,6 +40,11 @@ def send_monthly_report():
         
         if completed_response.status_code != 200 or all_response.status_code != 200:
             print(f"❌ 数据库查询失败")
+            if completed_response.status_code == 401:
+                print(f"完成任务查询: {completed_response.status_code} - {completed_response.text}")
+                print("⚠️ 认证失败！请使用 service_role key")
+            if all_response.status_code == 401:
+                print(f"所有任务查询: {all_response.status_code} - {all_response.text}")
             return False
         
         completed_tasks = completed_response.json()
