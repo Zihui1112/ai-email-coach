@@ -74,7 +74,7 @@ def send_daily_review():
         content += "3. 有哪些任务需要暂缓？\n"
         content += "\n示例：完成了用户登录功能80%，明天做数据库设计Q2任务"
         
-        # 发送到飞书 - 使用requests库
+        # 发送到飞书
         message = {
             "msg_type": "text",
             "content": {
@@ -82,19 +82,51 @@ def send_daily_review():
             }
         }
         
+        feishu_success = False
         response = requests.post(webhook_url, json=message, timeout=30)
         
         if response.status_code == 200:
             result = response.json()
             if result.get("StatusCode") == 0:
-                print("✅ 每日复盘提醒发送成功")
-                return True
+                print("✅ 飞书消息发送成功")
+                feishu_success = True
             else:
                 print(f"❌ 飞书返回错误: {result}")
-                return False
         else:
-            print(f"❌ HTTP请求失败: {response.status_code}")
-            return False
+            print(f"❌ 飞书HTTP请求失败: {response.status_code}")
+        
+        # 同时发送邮件
+        email_password = os.getenv("EMAIL_163_PASSWORD", "").strip()
+        
+        if email_password:
+            try:
+                import smtplib
+                from email.mime.text import MIMEText
+                from email.mime.multipart import MIMEMultipart
+                
+                print("发送邮件...")
+                
+                msg = MIMEMultipart()
+                msg['From'] = user_email
+                msg['To'] = user_email
+                msg['Subject'] = "📊 每日复盘提醒"
+                
+                email_body = f"每日复盘\n\n{content}\n\n---\n请直接回复此邮件更新任务进度"
+                msg.attach(MIMEText(email_body, 'plain', 'utf-8'))
+                
+                server = smtplib.SMTP_SSL("smtp.163.com", 465)
+                server.login(user_email, email_password)
+                server.send_message(msg)
+                server.quit()
+                
+                print("✅ 邮件发送成功")
+                return True
+                
+            except Exception as e:
+                print(f"❌ 邮件发送失败: {e}")
+                return feishu_success
+        
+        return feishu_success
             
     except Exception as e:
         print(f"❌ 发送失败: {e}")

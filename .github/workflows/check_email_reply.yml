@@ -1,13 +1,13 @@
-name: 每日复盘提醒
+name: 检查邮件回复
 
 on:
   schedule:
-    # 每天22:00 (UTC+8 = 14:00 UTC)
-    - cron: '0 14 * * *'
+    # 每天23:00 (UTC+8 = 15:00 UTC)
+    - cron: '0 15 * * *'
   workflow_dispatch:  # 允许手动触发
 
 jobs:
-  send-review:
+  check-reply:
     runs-on: ubuntu-latest
     
     steps:
@@ -23,13 +23,13 @@ jobs:
       run: |
         pip install requests
     
-    - name: 发送每日复盘
+    - name: 检查邮件回复
       env:
+        EMAIL_163_USERNAME: ${{ secrets.EMAIL_163_USERNAME }}
+        EMAIL_163_PASSWORD: ${{ secrets.EMAIL_163_PASSWORD }}
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-        EMAIL_163_USERNAME: ${{ secrets.EMAIL_163_USERNAME }}
-        EMAIL_163_PASSWORD: ${{ secrets.EMAIL_163_PASSWORD }}
       run: |
-        python scripts/daily_review.py
+        python scripts/check_email_reply.py
