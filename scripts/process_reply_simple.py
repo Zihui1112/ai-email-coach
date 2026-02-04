@@ -107,18 +107,30 @@ def process_user_reply(reply_content):
                 continue
             
             # 确保 quadrant 不是 None 并且格式正确
-            if not quadrant or not isinstance(quadrant, str):
+            if not quadrant or not isinstance(quadrant, str) or not quadrant.strip():
                 quadrant = 'Q1'
+            else:
+                quadrant = quadrant.strip().upper()
+                # 如果不是 Q1-Q4 格式，默认为 Q1
+                if not (quadrant.startswith('Q') and len(quadrant) == 2 and quadrant[1] in '1234'):
+                    quadrant = 'Q1'
             
             # 确保 progress 是数字
             try:
                 progress = int(progress) if progress else 0
+                # 限制在 0-100 范围内
+                progress = max(0, min(100, progress))
             except:
                 progress = 0
             
             # 确保 action 不是 None
-            if not action:
+            if not action or not isinstance(action, str):
                 action = 'update'
+            else:
+                action = action.strip().lower()
+                # 只允许特定的 action 值
+                if action not in ['update', 'pause', 'complete']:
+                    action = 'update'
             
             # 查询任务是否存在
             query_url = f"{supabase_url}/rest/v1/tasks?user_email=eq.{user_email}&task_name=eq.{task_name}&select=*"
