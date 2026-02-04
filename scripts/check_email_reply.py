@@ -241,8 +241,23 @@ def check_and_process_email_reply():
             quadrant = task_data.get('quadrant', 'Q1')
             action = task_data.get('action', 'update')
             
+            # 确保所有字段都不是 None
             if not task_name:
                 continue
+            
+            # 确保 quadrant 不是 None 并且格式正确
+            if not quadrant or not isinstance(quadrant, str):
+                quadrant = 'Q1'
+            
+            # 确保 progress 是数字
+            try:
+                progress = int(progress) if progress else 0
+            except:
+                progress = 0
+            
+            # 确保 action 不是 None
+            if not action:
+                action = 'update'
             
             # 查询任务是否存在
             query_url = f"{supabase_url}/rest/v1/tasks?user_email=eq.{email_username}&task_name=eq.{task_name}&select=*"
