@@ -86,10 +86,18 @@ def check_and_process_email_reply():
             pop_server.quit()
             return True
         
-        # 只检查最近的邮件（最多检查最新的5封）
-        check_count = min(5, num_messages)
+        # 只检查最近的邮件（最多检查最新的10封）
+        check_count = min(10, num_messages)
         latest_reply = None
         latest_time = None
+        
+        # 目标邮件标题（用于筛选）
+        target_subjects = [
+            "回复：📊 每日复盘提醒",
+            "Re: 📊 每日复盘提醒",
+            "回复：📊 每日跟进提醒",
+            "Re: 📊 每日跟进提醒"
+        ]
         
         # 从最新的邮件开始检查
         for i in range(num_messages, num_messages - check_count, -1):
@@ -99,12 +107,24 @@ def check_and_process_email_reply():
                 msg_content = b'\r\n'.join(lines)
                 msg = email.message_from_bytes(msg_content)
                 
-                # 获取邮件时间
+                # 获取邮件时间和标题
                 date_str = msg.get("Date", "")
                 subject = decode_str(msg.get("Subject", ""))
                 
                 print(f"\n检查邮件 #{i}: {subject}")
                 print(f"时间: {date_str}")
+                
+                # 检查标题是否符合要求
+                subject_match = False
+                for target_subject in target_subjects:
+                    if target_subject in subject:
+                        subject_match = True
+                        print(f"  → 标题匹配: {target_subject}")
+                        break
+                
+                if not subject_match:
+                    print(f"  → 标题不匹配，跳过")
+                    continue
                 
                 # 检查是否是最近的邮件（最近2小时内）
                 try:
@@ -127,7 +147,7 @@ def check_and_process_email_reply():
                         if latest_time is None or email_date > latest_time:
                             latest_reply = content
                             latest_time = email_date
-                            print(f"  → 找到回复内容（{len(content)}字符）")
+                            print(f"  → 找到符合条件的回复内容（{len(content)}字符）")
                     
                 except Exception as e:
                     print(f"  → 解析邮件失败: {e}")
@@ -139,25 +159,55 @@ def check_and_process_email_reply():
         
         pop_server.quit()
         
-        # 如果没有找到回复
+        # 如果没有找到符合条件的回复
         if not latest_reply:
-            print("\n没有找到最近2小时内的回复邮件")
+            print("\n没有找到符合标题要求的回复邮件")
             
-            # 发送提醒到飞书
+            # 发送提醒到飞书和邮箱
+            reminder_text = ("📧 邮件检查结果\n\n"
+                           "没有检测到符合要求的回复邮件。\n\n"
+                           "请确认：\n"
+                           "1. 回复了「📊 每日复盘提醒」或「📊 每日跟进提醒」邮件\n"
+                           "2. 邮件标题包含「回复：」或「Re:」\n"
+                           "3. 回复时间在最近2小时内\n\n"
+                           "💡 如需修改计划，请访问：\n"
+                           "https://github.com/Zihui1112/ai-email-coach/actions\n"
+                           "手动运行「处理用户回复」workflow")
+            
+            # 发送到飞书
             if webhook_url:
                 message = {
                     "msg_type": "text",
                     "content": {
-                        "text": "📧 邮件检查结果\n\n"
-                               "没有检测到你的回复邮件。\n\n"
-                               "如果你已经回复了，请确认：\n"
-                               "1. 回复的是 15302814198@163.com\n"
-                               "2. 邮件已成功发送\n"
-                               "3. 回复时间在最近2小时内\n\n"
-                               "或者稍后再试！😊"
+                        "text": reminder_text
                     }
                 }
                 requests.post(webhook_url, json=message, timeout=30)
+            
+            # 发送邮件提醒
+            try:
+                import smtplib
+                from email.mime.text import MIMEText
+                from email.mime.multipart import MIMEMultipart
+                
+                print("\n发送提醒邮件...")
+                
+                msg = MIMEMultipart()
+                msg['From'] = email_username
+                msg['To'] = email_username
+                msg['Subject'] = "⚠️ 未检测到回复"
+                
+                msg.attach(MIMEText(reminder_text, 'plain', 'utf-8'))
+                
+                server = smtplib.SMTP_SSL("smtp.163.com", 465)
+                server.login(email_username, email_password)
+                server.send_message(msg)
+                server.quit()
+                
+                print("✅ 提醒邮件发送成功")
+                
+            except Exception as e:
+                print(f"❌ 提醒邮件发送失败: {e}")
             
             return True
         
@@ -330,7 +380,10 @@ def check_and_process_email_reply():
                     else:
                         print(f"创建任务失败: {create_response.status_code}")
         
-        feedback_content += "💪 继续加油！"
+        feedback_content += "💪 继续加油！\n\n"
+        feedback_content += "💡 如需修改计划，请访问：\n"
+        feedback_content += "https://github.com/Zihui1112/ai-email-coach/actions\n"
+        feedback_content += "手动运行「处理用户回复」workflow"
         
         # 发送反馈到飞书
         if webhook_url:

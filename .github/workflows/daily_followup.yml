@@ -25,6 +25,10 @@ jobs:
     
     - name: 发送跟进提醒
       env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+        EMAIL_163_USERNAME: ${{ secrets.EMAIL_163_USERNAME }}
+        EMAIL_163_PASSWORD: ${{ secrets.EMAIL_163_PASSWORD }}
       run: |
         python scripts/daily_followup.py

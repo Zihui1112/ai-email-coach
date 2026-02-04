@@ -1,210 +1,93 @@
-# AI邮件督导系统
+# AI Email Coach
 
-一个通过邮件交互的智能任务管理和督导系统。用户可以通过发送邮件来更新任务进度，系统会使用AI分析用户的自然语言输入，自动更新任务状态，并根据用户配置的个性化风格发送反馈邮件。
+一个完全自动化的任务管理系统，通过邮件和飞书提醒你复盘任务，使用 AI 解析你的回复并自动更新数据库。
 
-## 🚀 核心功能
+## ✨ 核心功能
 
-- **邮件交互**: 通过回复邮件更新任务进度，支持自然语言输入
-- **AI解析**: 使用DeepSeek LLM智能解析用户意图和任务信息
-- **四象限管理**: 基于重要性和紧急性的任务分类（Q1-Q4）
-- **个性化反馈**: 支持毒舌/暖心两种督导风格
-- **防抖机制**: 10分钟内多封邮件只处理最后一封
-- **计划修改限制**: 每日最多修改2次计划，培养执行力
-- **ASCII进度条**: 直观显示任务完成情况
-- **待办池管理**: 智能推荐暂缓的任务
+- 📧 **每日复盘提醒**（22:00）- 自动发送任务清单到邮箱和飞书
+- ⏰ **每日跟进提醒**（23:00）- 提醒你尽快回复邮件
+- 🤖 **智能邮件解析**（23:30）- AI 自动解析回复并更新数据库
+- 📊 **周报月报**（自动生成）- 定期汇总任务完成情况
+- ☁️ **云端运行**（24/7）- 无需本地电脑，GitHub Actions 自动执行
 
-## 🛠 技术栈
+## 🚀 快速开始
 
-- **后端框架**: FastAPI (Python)
+### 1. 配置 GitHub Secrets
+
+在 GitHub 仓库设置中添加以下 Secrets：
+
+- `SUPABASE_URL` - Supabase 项目 URL
+- `SUPABASE_KEY` - Supabase service_role key
+- `DEEPSEEK_API_KEY` - DeepSeek AI API key
+- `FEISHU_WEBHOOK_URL` - 飞书 Webhook URL
+- `EMAIL_163_USERNAME` - 163 邮箱地址
+- `EMAIL_163_PASSWORD` - 163 邮箱授权码
+
+### 2. 初始化数据库
+
+在 Supabase 中执行 `database_setup.sql` 创建 tasks 表。
+
+### 3. 开始使用
+
+系统会自动在每天 22:00 发送复盘提醒，你只需要回复邮件即可！
+
+## 📅 每日时间安排
+
+| 时间 | 任务 | 说明 |
+|------|------|------|
+| 22:00 | 每日复盘提醒 | 发送任务清单，提示复盘和制定计划 |
+| 23:00 | 每日跟进提醒 | 提醒尽快回复（如已回复可忽略）|
+| 23:30 | 检查邮件回复 | AI 解析回复并更新数据库 |
+
+## 📧 如何回复邮件
+
+**重要**：必须回复标题包含以下内容的邮件：
+- 回复：📊 每日复盘提醒
+- 回复：📊 每日跟进提醒
+
+**回复示例**：
+```
+完成了用户登录功能90%，这是Q1任务
+明天做数据库设计Q2任务
+```
+
+AI 会自动识别任务名称、进度、象限和动作。
+
+## 🛠️ 技术栈
+
+- **后端**: Python 3.10
 - **数据库**: Supabase (PostgreSQL)
-- **邮件服务**: Resend
-- **AI模型**: DeepSeek LLM
-- **部署**: 支持Docker容器化
+- **AI**: DeepSeek API
+- **通知**: 163 邮箱 + 飞书
+- **部署**: GitHub Actions
+- **邮件协议**: POP3 + SMTP
 
-## 📦 安装和配置
-
-### 1. 克隆项目
-
-```bash
-git clone <your-repo-url>
-cd ai-email-coach
-```
-
-### 2. 创建虚拟环境
-
-```bash
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# 或
-venv\Scripts\activate  # Windows
-```
-
-### 3. 安装依赖
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. 配置环境变量
-
-```bash
-cp .env.example .env
-```
-
-编辑 `.env` 文件，填入以下配置：
-
-```env
-# Supabase配置
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-supabase-anon-key
-
-# Resend邮件服务配置
-RESEND_API_KEY=re_your-resend-api-key
-RESEND_WEBHOOK_SECRET=your-webhook-secret
-
-# DeepSeek LLM配置
-DEEPSEEK_API_KEY=sk-your-deepseek-api-key
-```
-
-### 5. 设置数据库
-
-在Supabase控制台中执行 `database_setup.sql` 脚本创建所需的表结构。
-
-### 6. 配置Resend Webhook
-
-在Resend控制台中配置webhook：
-- URL: `https://your-domain.com/inbound-email`
-- 事件: `email.received`
-
-## 🚀 运行应用
-
-### 开发环境
-
-```bash
-python main.py
-```
-
-或使用uvicorn：
-
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### 生产环境
-
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
-```
-
-## 📧 使用方法
-
-### 1. 初始设置
-
-首先发送邮件到系统邮箱，系统会自动为你创建用户配置。
-
-### 2. 更新任务进度
-
-发送邮件内容示例：
+## 📂 项目结构
 
 ```
-项目文档写了60%，属于Q1重要紧急
-学习Python进度30%，Q2重要不紧急
-回复客户邮件80%完成，Q3象限
+ai-email-coach/
+├── .github/workflows/     # GitHub Actions 工作流
+├── scripts/               # Python 脚本
+├── database_setup.sql     # 数据库初始化
+├── requirements.txt       # Python 依赖
+└── README.md             # 项目说明
 ```
 
-### 3. 修改计划
+## 📖 详细文档
 
-```
-我想调整一下计划，把学习Python改到Q1，进度提升到50%
-```
+- [使用指南.md](使用指南.md) - 完整使用说明
+- [完全自动化使用指南.md](完全自动化使用指南.md) - 自动化流程详解
 
-### 4. 暂缓任务
+## 🔗 相关链接
 
-```
-整理桌面这个任务先暂缓吧，以后再说
-```
+- GitHub Actions: https://github.com/Zihui1112/ai-email-coach/actions
+- Supabase: https://supabase.com
+- DeepSeek API: https://platform.deepseek.com
 
-### 5. 个性化设置
-
-系统支持两种督导风格：
-- **毒舌模式**: 犀利语气，对拖延行为进行反讽
-- **暖心模式**: 温柔语气，提供温暖的建议和鼓励
-
-## 🎯 四象限说明
-
-- **Q1 (重要紧急)**: 危机处理、紧急问题
-- **Q2 (重要不紧急)**: 预防、能力建设、计划
-- **Q3 (不重要紧急)**: 打断、某些电话、邮件
-- **Q4 (不重要不紧急)**: 浪费时间、娱乐活动
-
-## 📊 邮件反馈示例
-
-```
-📊 任务进度更新：
-
-• 项目文档
-  进度：[■■■■■■□□□□] 60%
-
-🎯 明日四象限清单：
-
-Q1 重要紧急：
-• 项目文档
-  进度：[■■■■■■□□□□] 60%
-
-Q2 重要不紧急：
-• 学习Python
-  进度：[■■■□□□□□□□] 30%
-
-📝 待办池推荐：
-• 整理桌面 - 要重新开始吗？
-
-继续努力，保持专注！
-
----
-回复此邮件更新你的任务进度吧！
-```
-
-## 🔧 API接口
-
-### POST /inbound-email
-接收Resend webhook的入站邮件
-
-### GET /health
-健康检查接口
-
-### GET /
-系统状态接口
-
-## 🧪 测试
-
-```bash
-# 运行所有测试
-pytest
-
-# 运行特定测试
-pytest tests/test_llm_parser.py
-
-# 生成覆盖率报告
-pytest --cov=main --cov-report=html
-```
-
-## 📝 开发计划
-
-- [ ] 添加每日复盘功能
-- [ ] 实现周度/月度统计报告
-- [ ] 支持任务优先级排序
-- [ ] 添加任务提醒功能
-- [ ] 实现多语言支持
-- [ ] 添加Web管理界面
-
-## 🤝 贡献
-
-欢迎提交Issue和Pull Request！
-
-## 📄 许可证
+## 📝 License
 
 MIT License
 
-## 📞 支持
+## 🤝 贡献
 
-如有问题，请提交Issue或联系开发者。
+欢迎提交 Issue 和 Pull Request！

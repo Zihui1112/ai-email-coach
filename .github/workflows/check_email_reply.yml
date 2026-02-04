@@ -2,8 +2,8 @@ name: 检查邮件回复
 
 on:
   schedule:
-    # 每天23:00 (UTC+8 = 15:00 UTC)
-    - cron: '0 15 * * *'
+    # 每天23:30 (UTC+8 = 15:30 UTC)
+    - cron: '30 15 * * *'
   workflow_dispatch:  # 允许手动触发
 
 jobs:
