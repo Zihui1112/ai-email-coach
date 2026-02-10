@@ -1,59 +1,164 @@
 """
 每日复盘提醒脚本 - GitHub Actions
+v2.0 - 添加个性化AI反馈和未回复追踪
 """
 import os
 import sys
 import requests
-from datetime import datetime
+from datetime import datetime, date, timedelta
+import json
 
 # 添加父目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+def get_user_reply_status(supabase_url, headers, user_email):
+    """获取用户回复状态"""
+    try:
+        query_url = f"{supabase_url}/rest/v1/user_reply_tracking?user_email=eq.{user_email}&select=*"
+        response = requests.get(query_url, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                return data[0]
+        
+        # 如果没有记录，创建一个
+        create_url = f"{supabase_url}/rest/v1/user_reply_tracking"
+        create_data = {
+            "user_email": user_email,
+            "last_reply_date": None,
+            "consecutive_no_reply_days": 0,
+            "total_replies": 0
+        }
+        response = requests.post(create_url, headers=headers, json=create_data, timeout=30)
+        
+        if response.status_code in [200, 201]:
+            return create_data
+        
+        return None
+    except Exception as e:
+        print(f"获取用户回复状态失败: {e}")
+        return None
+
+def update_no_reply_days(supabase_url, headers, user_email, reply_status):
+    """更新连续未回复天数"""
+    try:
+        last_reply_date = reply_status.get('last_reply_date')
+        consecutive_days = reply_status.get('consecutive_no_reply_days', 0)
+        
+        # 如果有最后回复日期，计算天数差
+        if last_reply_date:
+            last_date = datetime.strptime(last_reply_date, '%Y-%m-%d').date()
+            days_diff = (date.today() - last_date).days
+            
+            # 如果超过1天没回复，增加计数
+            if days_diff > 1:
+                consecutive_days = days_diff - 1
+        else:
+            # 如果从未回复，增加计数
+            consecutive_days += 1
+        
+        # 更新数据库
+        update_url = f"{supabase_url}/rest/v1/user_reply_tracking?user_email=eq.{user_email}"
+        update_data = {
+            "consecutive_no_reply_days": consecutive_days,
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        response = requests.patch(update_url, headers=headers, json=update_data, timeout=30)
+        
+        if response.status_code in [200, 204]:
+            print(f"✅ 更新连续未回复天数: {consecutive_days}")
+            return consecutive_days
+        
+        return consecutive_days
+    except Exception as e:
+        print(f"更新未回复天数失败: {e}")
+        return 0
+
+def generate_personalized_greeting(consecutive_no_reply_days, is_weekend):
+    """生成个性化问候语"""
+    today = datetime.now()
+    weekday = today.strftime('%A')
+    weekday_cn = {
+        'Monday': '周一', 'Tuesday': '周二', 'Wednesday': '周三',
+        'Thursday': '周四', 'Friday': '周五', 'Saturday': '周六', 'Sunday': '周日'
+    }
+    
+    if consecutive_no_reply_days == 0:
+        # 正常情况
+        greetings = [
+            f"🌙 {weekday_cn.get(weekday, '')}晚上好！又到了复盘时间~",
+            f"✨ {weekday_cn.get(weekday, '')}晚上好！今天过得怎么样？",
+            f"🎯 {weekday_cn.get(weekday, '')}晚上好！来看看今天的进展吧！"
+        ]
+        import random
+        return random.choice(greetings)
+    elif consecutive_no_reply_days == 1:
+        # 昨天没回复
+        return f"👋 {weekday_cn.get(weekday, '')}晚上好！昨天好像没看到你的回复，今天一起来复盘吧~"
+    elif consecutive_no_reply_days == 2:
+        # 连续2天没回复
+        return f"🤔 {weekday_cn.get(weekday, '')}晚上好！已经两天没见到你了，是不是最近比较忙？抽空复盘一下吧！"
+    elif consecutive_no_reply_days >= 3:
+        # 连续3天以上没回复
+        return f"⚠️ {weekday_cn.get(weekday, '')}晚上好！已经{consecutive_no_reply_days}天没有回复了！别让任务积压太久哦，今天一定要回复！"
+    
+    return "🌙 晚上好！"
 
 def send_daily_review():
     """发送每日复盘提醒"""
     print(f"[{datetime.now()}] 开始发送每日复盘提醒")
     
-    # 获取环境变量并清理空格和换行符
+    # 获取环境变量
     webhook_url = os.getenv("FEISHU_WEBHOOK_URL", "").strip()
     user_email = os.getenv("EMAIL_163_USERNAME", "").strip()
     supabase_url = os.getenv("SUPABASE_URL", "").strip()
     supabase_key = os.getenv("SUPABASE_KEY", "").strip()
     
     if not all([webhook_url, user_email, supabase_url, supabase_key]):
-        print("❌ 环境变量未配置完整，请检查.env文件")
+        print("❌ 环境变量未配置完整")
         return False
     
     try:
-        # 使用 REST API 直接查询数据库（避免 HTTP/2 问题）
         headers = {
             "apikey": supabase_key,
             "Authorization": f"Bearer {supabase_key}",
             "Content-Type": "application/json"
         }
         
-        # 获取今日任务
+        # 获取用户回复状态
+        reply_status = get_user_reply_status(supabase_url, headers, user_email)
+        consecutive_no_reply_days = 0
+        
+        if reply_status:
+            consecutive_no_reply_days = update_no_reply_days(supabase_url, headers, user_email, reply_status)
+        
+        # 判断是否是周末
+        is_weekend = datetime.now().weekday() >= 5
+        
+        # 获取活跃任务
         query_url = f"{supabase_url}/rest/v1/tasks?user_email=eq.{user_email}&status=eq.active&select=*"
         db_response = requests.get(query_url, headers=headers, timeout=30)
         
         if db_response.status_code != 200:
             print(f"❌ 数据库查询失败: {db_response.status_code}")
-            print(f"响应内容: {db_response.text}")
-            if db_response.status_code == 401:
-                print("⚠️ 认证失败！请检查 SUPABASE_KEY 是否使用了 service_role key")
-                print("提示：需要使用 service_role key，而不是 anon key")
             return False
         
         tasks = db_response.json()
         
+        # 生成个性化问候语
+        greeting = generate_personalized_greeting(consecutive_no_reply_days, is_weekend)
+        
         # 生成消息内容
-        content = "🌙 晚上好！今天的任务完成情况如何？\n\n"
+        content = f"{greeting}\n\n"
         content += "📋 今日任务清单：\n"
         
         if tasks:
             for task in tasks:
-                progress = task.get('progress', 0)
+                progress = task.get('progress_percentage', 0)
                 task_name = task.get('task_name', '未命名任务')
-                quadrant = task.get('quadrant', 'Q1')
+                quadrant = f"Q{task.get('quadrant', 1)}"
                 
                 # 生成进度条
                 filled = int(progress / 10)
@@ -67,6 +172,15 @@ def send_daily_review():
                 content += f"   象限: {quadrant}\n"
         else:
             content += "\n暂无进行中的任务\n"
+        
+        # 根据连续未回复天数调整提示语
+        if consecutive_no_reply_days >= 3:
+            content += "\n\n⚠️ 重要提醒：\n"
+            content += f"已经{consecutive_no_reply_days}天没有更新任务了！\n"
+            content += "长时间不复盘可能会让任务失控，今天一定要回复哦！\n"
+        elif consecutive_no_reply_days >= 1:
+            content += "\n\n💡 温馨提示：\n"
+            content += "定期复盘能帮助你更好地掌控任务进度~\n"
         
         content += "\n\n💬 请回复以下内容：\n"
         content += "1. 今天完成了哪些任务？进度如何？\n"
@@ -95,7 +209,7 @@ def send_daily_review():
         else:
             print(f"❌ 飞书HTTP请求失败: {response.status_code}")
         
-        # 同时发送邮件
+        # 发送邮件
         email_password = os.getenv("EMAIL_163_PASSWORD", "").strip()
         
         if email_password:

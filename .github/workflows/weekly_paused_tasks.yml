@@ -1,0 +1,34 @@
+name: 每周暂缓任务检查
+
+on:
+  schedule:
+    # 每周日21:00 (UTC+8 = 13:00 UTC on Sunday)
+    - cron: '0 13 * * 0'
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  check-paused-tasks:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v3
+    
+    - name: 设置Python环境
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: 安装依赖
+      run: |
+        pip install requests
+    
+    - name: 发送暂缓任务提醒
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+        EMAIL_163_USERNAME: ${{ secrets.EMAIL_163_USERNAME }}
+        EMAIL_163_PASSWORD: ${{ secrets.EMAIL_163_PASSWORD }}
+      run: |
+        python scripts/weekly_paused_tasks.py

@@ -1,6 +1,7 @@
 """
 检查邮件回复并自动处理 - GitHub Actions
-每天23:00自动运行，检查用户的邮件回复
+每天23:30自动运行，检查用户的邮件回复
+v2.0 - 添加AI个性化反馈
 """
 import os
 import sys
@@ -8,12 +9,189 @@ import poplib
 import email
 from email.header import decode_header
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import re
 import json
 
 # 添加父目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+def update_user_reply_tracking(supabase_url, headers, user_email):
+    """更新用户回复追踪"""
+    try:
+        update_url = f"{supabase_url}/rest/v1/user_reply_tracking?user_email=eq.{user_email}"
+        update_data = {
+            "last_reply_date": date.today().isoformat(),
+            "consecutive_no_reply_days": 0,
+            "total_replies": 1,  # 这里应该是增量，但为了简化先设为1
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        # 先尝试更新
+        response = requests.patch(update_url, headers=headers, json=update_data, timeout=30)
+        
+        if response.status_code in [200, 204]:
+            print("✅ 更新用户回复追踪成功")
+            return True
+        
+        # 如果更新失败，尝试创建
+        create_url = f"{supabase_url}/rest/v1/user_reply_tracking"
+        create_data = {
+            "user_email": user_email,
+            "last_reply_date": date.today().isoformat(),
+            "consecutive_no_reply_days": 0,
+            "total_replies": 1
+        }
+        
+        response = requests.post(create_url, headers=headers, json=create_data, timeout=30)
+        
+        if response.status_code in [200, 201]:
+            print("✅ 创建用户回复追踪成功")
+            return True
+        
+        return False
+    except Exception as e:
+        print(f"更新用户回复追踪失败: {e}")
+        return False
+
+def get_task_progress_changes(supabase_url, headers, user_email, tasks_data):
+    """获取任务进度变化"""
+    try:
+        changes = []
+        
+        for task_data in tasks_data:
+            task_name = task_data.get('task_name', '')
+            new_progress = task_data.get('progress', 0)
+            
+            # 查询昨天的进度
+            yesterday = (date.today() - timedelta(days=1)).isoformat()
+            query_url = f"{supabase_url}/rest/v1/task_progress_snapshot?user_email=eq.{user_email}&task_name=eq.{task_name}&snapshot_date=eq.{yesterday}&select=*"
+            
+            response = requests.get(query_url, headers=headers, timeout=30)
+            
+            if response.status_code == 200:
+                snapshots = response.json()
+                if snapshots:
+                    old_progress = snapshots[0].get('progress_percentage', 0)
+                    progress_change = new_progress - old_progress
+                    
+                    changes.append({
+                        'task_name': task_name,
+                        'old_progress': old_progress,
+                        'new_progress': new_progress,
+                        'change': progress_change
+                    })
+        
+        return changes
+    except Exception as e:
+        print(f"获取任务进度变化失败: {e}")
+        return []
+
+def save_task_progress_snapshot(supabase_url, headers, user_email, tasks_data):
+    """保存任务进度快照"""
+    try:
+        today = date.today().isoformat()
+        
+        for task_data in tasks_data:
+            task_name = task_data.get('task_name', '')
+            progress = task_data.get('progress', 0)
+            action = task_data.get('action', 'update')
+            
+            status = "completed" if action == "complete" else ("paused" if action == "pause" else "active")
+            
+            # 先尝试更新
+            update_url = f"{supabase_url}/rest/v1/task_progress_snapshot?user_email=eq.{user_email}&task_name=eq.{task_name}&snapshot_date=eq.{today}"
+            update_data = {
+                "progress_percentage": progress,
+                "status": status
+            }
+            
+            response = requests.patch(update_url, headers=headers, json=update_data, timeout=30)
+            
+            if response.status_code not in [200, 204]:
+                # 如果更新失败，尝试创建
+                create_url = f"{supabase_url}/rest/v1/task_progress_snapshot"
+                create_data = {
+                    "user_email": user_email,
+                    "task_name": task_name,
+                    "progress_percentage": progress,
+                    "status": status,
+                    "snapshot_date": today
+                }
+                
+                requests.post(create_url, headers=headers, json=create_data, timeout=30)
+        
+        print("✅ 保存任务进度快照成功")
+        return True
+    except Exception as e:
+        print(f"保存任务进度快照失败: {e}")
+        return False
+
+def generate_ai_feedback(tasks_data, supabase_url, headers, user_email, deepseek_api_key):
+    """使用AI生成个性化反馈"""
+    try:
+        # 获取任务进度变化
+        progress_changes = get_task_progress_changes(supabase_url, headers, user_email, tasks_data)
+        
+        # 构建AI提示词
+        task_summary = []
+        for task in tasks_data:
+            task_summary.append({
+                'name': task.get('task_name', ''),
+                'progress': task.get('progress', 0),
+                'action': task.get('action', 'update')
+            })
+        
+        prompt = f"""你是一个温暖、鼓励的任务管理助手。请根据用户的任务更新情况，生成一段个性化的反馈。
+
+任务更新情况：
+{json.dumps(task_summary, ensure_ascii=False, indent=2)}
+
+进度变化：
+{json.dumps(progress_changes, ensure_ascii=False, indent=2) if progress_changes else "无历史数据"}
+
+要求：
+1. 语气温暖、鼓励，像朋友一样
+2. 根据进度变化给出具体的反馈（进步大→表扬，进度慢→鼓励，暂缓→理解）
+3. 根据任务数量给出建议（任务多→提醒合理安排，任务少→鼓励增加）
+4. 不要使用"继续加油"这种机械的话
+5. 控制在3-5句话以内
+6. 不要使用emoji，使用文字表达情感
+
+只返回反馈内容，不要其他说明。"""
+        
+        headers_ai = {
+            "Authorization": f"Bearer {deepseek_api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "deepseek-chat",
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.8
+        }
+        
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            headers=headers_ai,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            feedback = result['choices'][0]['message']['content'].strip()
+            print(f"✅ AI反馈生成成功: {feedback[:50]}...")
+            return feedback
+        else:
+            print(f"❌ AI反馈生成失败: {response.status_code}")
+            return "很高兴看到你的更新！保持这个节奏，相信你能完成所有任务。"
+    
+    except Exception as e:
+        print(f"生成AI反馈失败: {e}")
+        return "感谢你的更新！继续保持，你做得很好。"
 
 def decode_str(s):
     """解码邮件头"""
@@ -380,10 +558,20 @@ def check_and_process_email_reply():
                     else:
                         print(f"创建任务失败: {create_response.status_code}")
         
-        feedback_content += "💪 继续加油！\n\n"
+        # 保存任务进度快照
+        save_task_progress_snapshot(supabase_url, db_headers, email_username, tasks_data)
+        
+        # 使用 AI 生成个性化反馈
+        print("\n生成个性化反馈...")
+        personalized_feedback = generate_ai_feedback(tasks_data, supabase_url, db_headers, email_username, deepseek_api_key)
+        
+        feedback_content += f"\n{personalized_feedback}\n\n"
         feedback_content += "💡 如需修改计划，请访问：\n"
         feedback_content += "https://github.com/Zihui1112/ai-email-coach/actions\n"
         feedback_content += "手动运行「处理用户回复」workflow"
+        
+        # 更新用户回复追踪
+        update_user_reply_tracking(supabase_url, db_headers, email_username)
         
         # 发送反馈到飞书
         if webhook_url:
