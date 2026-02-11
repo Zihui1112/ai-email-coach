@@ -1,6 +1,6 @@
 """
 每日复盘提醒脚本 - GitHub Actions
-v2.0 - 添加个性化AI反馈和未回复追踪
+v3.0 - 添加游戏化系统（等级、经验值、金币）
 """
 import os
 import sys
@@ -10,6 +10,13 @@ import json
 
 # 添加父目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# 导入游戏化工具
+from gamification_utils import (
+    get_user_gamification_data,
+    format_quadrant_guide,
+    format_user_status
+)
 
 def get_user_reply_status(supabase_url, headers, user_email):
     """获取用户回复状态"""
@@ -137,6 +144,9 @@ def send_daily_review():
         # 判断是否是周末
         is_weekend = datetime.now().weekday() >= 5
         
+        # 获取用户游戏化数据
+        user_game_data = get_user_gamification_data(supabase_url, headers, user_email)
+        
         # 获取活跃任务
         query_url = f"{supabase_url}/rest/v1/tasks?user_email=eq.{user_email}&status=eq.active&select=*"
         db_response = requests.get(query_url, headers=headers, timeout=30)
@@ -152,6 +162,10 @@ def send_daily_review():
         
         # 生成消息内容
         content = f"{greeting}\n\n"
+        
+        # 添加四象限说明
+        content += format_quadrant_guide() + "\n\n"
+        
         content += "📋 今日任务清单：\n"
         
         if tasks:
@@ -187,6 +201,20 @@ def send_daily_review():
         content += "2. 明天计划做什么？\n"
         content += "3. 有哪些任务需要暂缓？\n"
         content += "\n示例：完成了用户登录功能80%，明天做数据库设计Q2任务"
+        
+        # 添加用户状态显示
+        if user_game_data:
+            content += "\n\n" + format_user_status(user_game_data)
+            
+            # 添加性格切换提示
+            level = user_game_data.get('level', 1)
+            if level >= 4:
+                content += "\n\n💡 提示：你可以在回复中切换AI性格"
+                content += "\n格式：切换性格：专业型"
+                if level >= 8:
+                    content += " / 严格型"
+                if level >= 13:
+                    content += " / 毒舌型"
         
         # 发送到飞书
         message = {
