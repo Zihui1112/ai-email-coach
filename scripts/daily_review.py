@@ -15,7 +15,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from gamification_utils import (
     get_user_gamification_data,
     format_quadrant_guide,
-    format_user_status
+    format_user_status,
+    check_and_apply_no_reply_punishment,
+    format_punishment_message
 )
 
 def get_user_reply_status(supabase_url, headers, user_email):
@@ -141,6 +143,9 @@ def send_daily_review():
         if reply_status:
             consecutive_no_reply_days = update_no_reply_days(supabase_url, headers, user_email, reply_status)
         
+        # 检查并执行未回复惩罚
+        punishment_result = check_and_apply_no_reply_punishment(supabase_url, headers, user_email)
+        
         # 判断是否是周末
         is_weekend = datetime.now().weekday() >= 5
         
@@ -205,6 +210,10 @@ def send_daily_review():
         # 添加用户状态显示
         if user_game_data:
             content += "\n\n" + format_user_status(user_game_data)
+            
+            # 如果有惩罚，显示惩罚信息
+            if punishment_result:
+                content += "\n\n" + format_punishment_message(punishment_result)
             
             # 添加性格切换提示
             level = user_game_data.get('level', 1)

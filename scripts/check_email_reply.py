@@ -23,7 +23,10 @@ from gamification_utils import (
     update_user_exp_and_coins,
     check_and_update_q1_streak,
     format_level_up_message,
-    get_user_gamification_data
+    get_user_gamification_data,
+    update_consecutive_reply_days,
+    check_persistence_milestone,
+    format_persistence_reward_message
 )
 
 def update_user_reply_tracking(supabase_url, headers, user_email):
@@ -668,6 +671,19 @@ def check_and_process_email_reply():
         
         # 更新用户回复追踪
         update_user_reply_tracking(supabase_url, db_headers, email_username)
+        
+        # 更新连续回复天数
+        consecutive_reply_days = update_consecutive_reply_days(supabase_url, db_headers, email_username)
+        
+        # 检查坚持里程碑奖励
+        persistence_reward = check_persistence_milestone(supabase_url, db_headers, email_username, consecutive_reply_days)
+        
+        # 如果有坚持奖励，添加到反馈中
+        if persistence_reward:
+            feedback_content += "\n\n" + format_persistence_reward_message(persistence_reward)
+        
+        # 显示连续回复天数
+        feedback_content += f"\n\n💡 连续回复：{consecutive_reply_days}天 🔥"
         
         # 发送反馈到飞书
         if webhook_url:
