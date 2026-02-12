@@ -776,3 +776,269 @@ def format_persistence_reward_message(reward):
 ╚═══════════════════════════════════╝"""
     
     return message
+
+
+# ==================== AI性格系统相关函数 ====================
+
+def parse_personality_switch_command(user_message):
+    """
+    解析性格切换命令
+    
+    Args:
+        user_message: 用户消息内容
+    
+    Returns:
+        str: 性格代码（friendly/professional/strict/toxic），如果没有切换命令则返回None
+    """
+    # 匹配格式：切换性格：XXX型
+    import re
+    
+    patterns = [
+        r'切换性格[：:]\s*(友好|专业|严格|毒舌)型?',
+        r'切换[：:]\s*(友好|专业|严格|毒舌)型?',
+        r'性格[：:]\s*(友好|专业|严格|毒舌)型?'
+    ]
+    
+    personality_map = {
+        '友好': 'friendly',
+        '专业': 'professional',
+        '严格': 'strict',
+        '毒舌': 'toxic'
+    }
+    
+    for pattern in patterns:
+        match = re.search(pattern, user_message)
+        if match:
+            personality_cn = match.group(1)
+            return personality_map.get(personality_cn)
+    
+    return None
+
+def switch_ai_personality(supabase_url, headers, user_email, new_personality):
+    """
+    切换AI性格
+    
+    Args:
+        new_personality: 新性格代码（friendly/professional/strict/toxic）
+    
+    Returns:
+        dict: 切换结果
+    """
+    try:
+        # 获取用户数据
+        user_data = get_user_gamification_data(supabase_url, headers, user_email)
+        
+        if not user_data:
+            return {'success': False, 'reason': '用户数据不存在'}
+        
+        current_level = user_data.get('level', 1)
+        current_personality = user_data.get('ai_personality', 'friendly')
+        
+        # 检查性格是否有效
+        if new_personality not in AI_PERSONALITIES:
+            return {'success': False, 'reason': '无效的性格类型'}
+        
+        # 检查等级是否足够
+        required_level = AI_PERSONALITIES[new_personality]['min_level']
+        if current_level < required_level:
+            return {
+                'success': False,
+                'reason': f'等级不足',
+                'required_level': required_level,
+                'current_level': current_level,
+                'personality_name': AI_PERSONALITIES[new_personality]['name']
+            }
+        
+        # 检查是否已经是这个性格
+        if current_personality == new_personality:
+            return {
+                'success': False,
+                'reason': '已经是这个性格了',
+                'personality_name': AI_PERSONALITIES[new_personality]['name']
+            }
+        
+        # 更新性格
+        update_url = f"{supabase_url}/rest/v1/user_gamification?user_email=eq.{user_email}"
+        update_data = {
+            "ai_personality": new_personality,
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        response = requests.patch(update_url, headers=headers, json=update_data, timeout=30)
+        
+        if response.status_code in [200, 204]:
+            return {
+                'success': True,
+                'old_personality': current_personality,
+                'new_personality': new_personality,
+                'old_name': AI_PERSONALITIES[current_personality]['name'],
+                'new_name': AI_PERSONALITIES[new_personality]['name']
+            }
+        
+        return {'success': False, 'reason': '数据库更新失败'}
+    except Exception as e:
+        print(f"切换AI性格失败: {e}")
+        return {'success': False, 'reason': str(e)}
+
+def format_personality_switch_message(switch_result):
+    """格式化性格切换消息"""
+    if not switch_result.get('success'):
+        reason = switch_result.get('reason', '未知错误')
+        
+        if reason == '等级不足':
+            required_level = switch_result.get('required_level', 1)
+            current_level = switch_result.get('current_level', 1)
+            personality_name = switch_result.get('personality_name', '')
+            
+            return f"""
+⚠️ 性格切换失败
+
+{personality_name} 需要 LV{required_level} 才能解锁
+你当前等级：LV{current_level}
+
+💡 继续升级即可解锁更多性格！"""
+        
+        elif reason == '已经是这个性格了':
+            personality_name = switch_result.get('personality_name', '')
+            return f"\n💡 你已经是 {personality_name} 了，无需切换。"
+        
+        else:
+            return f"\n⚠️ 性格切换失败：{reason}"
+    
+    old_name = switch_result.get('old_name', '')
+    new_name = switch_result.get('new_name', '')
+    
+    return f"""
+╔═══════════════════════════════════╗
+║  🎭 性格切换成功                  ║
+╠═══════════════════════════════════╣
+║                                   ║
+║  {old_name} → {new_name}          ║
+║                                   ║
+║  从现在开始，我会用新的风格      ║
+║  与你交流！                       ║
+║                                   ║
+╚═══════════════════════════════════╝"""
+
+def get_personality_prompt(personality_code):
+    """
+    获取不同性格的AI提示词
+    
+    Args:
+        personality_code: 性格代码
+    
+    Returns:
+        str: 性格提示词
+    """
+    prompts = {
+        'friendly': """你是一个温暖、鼓励的任务管理助手。
+特点：
+- 语气温暖友好，像朋友一样
+- 多用鼓励和赞美的话
+- 即使进度慢也要给予理解和支持
+- 用积极正面的语言
+- 适当使用温暖的表达，但不要过度""",
+        
+        'professional': """你是一个专业、理性的任务管理顾问。
+特点：
+- 语气专业客观，像职业顾问
+- 基于数据给出分析和建议
+- 指出问题但不批评，提供解决方案
+- 用理性、逻辑的语言
+- 保持专业距离感""",
+        
+        'strict': """你是一个严格、督导的任务管理教练。
+特点：
+- 语气严格认真，像严师
+- 对拖延和低效率直接指出
+- 设定高标准，要求持续进步
+- 用坚定、有力的语言
+- 适当施加压力，但不要过分""",
+        
+        'toxic': """你是一个犀利、毒舌的任务管理监督者。
+特点：
+- 语气犀利直接，像毒舌朋友
+- 对拖延和借口进行吐槽
+- 用反讽和幽默激励
+- 语言犀利但不恶意
+- 目标是用"激将法"激发动力"""
+    }
+    
+    return prompts.get(personality_code, prompts['friendly'])
+
+def generate_personality_feedback(tasks_data, progress_changes, personality_code, deepseek_api_key):
+    """
+    根据性格生成个性化反馈
+    
+    Args:
+        tasks_data: 任务数据
+        progress_changes: 进度变化
+        personality_code: 性格代码
+        deepseek_api_key: DeepSeek API密钥
+    
+    Returns:
+        str: 个性化反馈
+    """
+    try:
+        # 构建任务摘要
+        task_summary = []
+        for task in tasks_data:
+            task_summary.append({
+                'name': task.get('task_name', ''),
+                'progress': task.get('progress', 0),
+                'action': task.get('action', 'update')
+            })
+        
+        # 获取性格提示词
+        personality_prompt = get_personality_prompt(personality_code)
+        
+        prompt = f"""{personality_prompt}
+
+请根据用户的任务更新情况，生成一段符合你性格的反馈。
+
+任务更新情况：
+{json.dumps(task_summary, ensure_ascii=False, indent=2)}
+
+进度变化：
+{json.dumps(progress_changes, ensure_ascii=False, indent=2) if progress_changes else "无历史数据"}
+
+要求：
+1. 严格按照你的性格特点来表达
+2. 根据进度变化给出具体的反馈
+3. 根据任务数量给出建议
+4. 控制在3-5句话以内
+5. 不要使用emoji，使用文字表达
+
+只返回反馈内容，不要其他说明。"""
+        
+        headers = {
+            "Authorization": f"Bearer {deepseek_api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "deepseek-chat",
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.8
+        }
+        
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            feedback = result['choices'][0]['message']['content'].strip()
+            return feedback
+        else:
+            # 降级到默认反馈
+            return "感谢你的更新！继续保持，你做得很好。"
+    
+    except Exception as e:
+        print(f"生成性格化反馈失败: {e}")
+        return "感谢你的更新！继续保持，你做得很好。"

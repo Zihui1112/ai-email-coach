@@ -26,7 +26,11 @@ from gamification_utils import (
     get_user_gamification_data,
     update_consecutive_reply_days,
     check_persistence_milestone,
-    format_persistence_reward_message
+    format_persistence_reward_message,
+    parse_personality_switch_command,
+    switch_ai_personality,
+    format_personality_switch_message,
+    generate_personality_feedback
 )
 
 def update_user_reply_tracking(supabase_url, headers, user_email):
@@ -405,6 +409,14 @@ def check_and_process_email_reply():
         print(f"\n✅ 找到最新回复（{latest_time}）")
         print(f"内容预览: {latest_reply[:100]}...")
         
+        # 检查是否有性格切换命令
+        personality_switch_cmd = parse_personality_switch_command(latest_reply)
+        personality_switch_result = None
+        
+        if personality_switch_cmd:
+            print(f"\n检测到性格切换命令: {personality_switch_cmd}")
+            personality_switch_result = switch_ai_personality(supabase_url, db_headers, email_username, personality_switch_cmd)
+        
         # 使用 DeepSeek AI 解析回复
         print("\n使用 AI 解析回复...")
         
@@ -662,9 +674,28 @@ def check_and_process_email_reply():
         
         # 使用 AI 生成个性化反馈
         print("\n生成个性化反馈...")
-        personalized_feedback = generate_ai_feedback(tasks_data, supabase_url, db_headers, email_username, deepseek_api_key)
+        
+        # 获取用户当前性格
+        user_game_data = get_user_gamification_data(supabase_url, db_headers, email_username)
+        current_personality = user_game_data.get('ai_personality', 'friendly') if user_game_data else 'friendly'
+        
+        # 获取进度变化
+        progress_changes = get_task_progress_changes(supabase_url, db_headers, email_username, tasks_data)
+        
+        # 根据性格生成反馈
+        personalized_feedback = generate_personality_feedback(
+            tasks_data, 
+            progress_changes, 
+            current_personality, 
+            deepseek_api_key
+        )
         
         feedback_content += f"\n{personalized_feedback}\n\n"
+        
+        # 如果有性格切换，添加切换消息
+        if personality_switch_result:
+            feedback_content += format_personality_switch_message(personality_switch_result) + "\n\n"
+        
         feedback_content += "💡 如需修改计划，请访问：\n"
         feedback_content += "https://github.com/Zihui1112/ai-email-coach/actions\n"
         feedback_content += "手动运行「处理用户回复」workflow"
