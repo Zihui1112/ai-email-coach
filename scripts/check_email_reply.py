@@ -30,7 +30,15 @@ from gamification_utils import (
     parse_personality_switch_command,
     switch_ai_personality,
     format_personality_switch_message,
-    generate_personality_feedback
+    generate_personality_feedback,
+    parse_purchase_command,
+    get_shop_item_by_name,
+    check_purchase_eligibility,
+    check_usage_limit,
+    purchase_item,
+    format_purchase_result_message,
+    format_purchase_error_message,
+    get_user_inventory_summary
 )
 
 def update_user_reply_tracking(supabase_url, headers, user_email):
@@ -417,6 +425,45 @@ def check_and_process_email_reply():
             print(f"\n检测到性格切换命令: {personality_switch_cmd}")
             personality_switch_result = switch_ai_personality(supabase_url, db_headers, email_username, personality_switch_cmd)
         
+        # 检查是否有购买命令
+        purchase_cmd = parse_purchase_command(latest_reply)
+        purchase_result = None
+        
+        if purchase_cmd:
+            print(f"\n检测到购买命令: {purchase_cmd}")
+            
+            # 获取道具信息
+            item_data = get_shop_item_by_name(supabase_url, db_headers, purchase_cmd)
+            
+            if not item_data:
+                purchase_result = {'success': False, 'error_type': 'item_not_found'}
+            else:
+                # 获取用户数据
+                user_data = get_user_gamification_data(supabase_url, db_headers, email_username)
+                
+                # 检查购买资格
+                eligibility = check_purchase_eligibility(user_data, item_data)
+                
+                if not eligibility['eligible']:
+                    purchase_result = {
+                        'success': False,
+                        'error_type': eligibility['reason'],
+                        'error_data': eligibility
+                    }
+                else:
+                    # 检查使用限制
+                    limit_check = check_usage_limit(supabase_url, db_headers, email_username, item_data['item_code'], item_data)
+                    
+                    if not limit_check['within_limit']:
+                        purchase_result = {
+                            'success': False,
+                            'error_type': 'usage_limit_exceeded',
+                            'error_data': limit_check
+                        }
+                    else:
+                        # 执行购买
+                        purchase_result = purchase_item(supabase_url, db_headers, email_username, item_data['item_code'], item_data)
+        
         # 使用 DeepSeek AI 解析回复
         print("\n使用 AI 解析回复...")
         
@@ -696,6 +743,15 @@ def check_and_process_email_reply():
         if personality_switch_result:
             feedback_content += format_personality_switch_message(personality_switch_result) + "\n\n"
         
+        # 如果有购买，添加购买结果
+        if purchase_result:
+            if purchase_result.get('success'):
+                feedback_content += format_purchase_result_message(purchase_result) + "\n\n"
+            else:
+                error_type = purchase_result.get('error_type', 'unknown')
+                error_data = purchase_result.get('error_data', {})
+                feedback_content += format_purchase_error_message(error_type, error_data) + "\n\n"
+        
         feedback_content += "💡 如需修改计划，请访问：\n"
         feedback_content += "https://github.com/Zihui1112/ai-email-coach/actions\n"
         feedback_content += "手动运行「处理用户回复」workflow"
@@ -715,6 +771,11 @@ def check_and_process_email_reply():
         
         # 显示连续回复天数
         feedback_content += f"\n\n💡 连续回复：{consecutive_reply_days}天 🔥"
+        
+        # 显示背包摘要
+        inventory_summary = get_user_inventory_summary(supabase_url, db_headers, email_username)
+        if inventory_summary:
+            feedback_content += inventory_summary
         
         # 发送反馈到飞书
         if webhook_url:

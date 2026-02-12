@@ -17,7 +17,8 @@ from gamification_utils import (
     format_quadrant_guide,
     format_user_status,
     check_and_apply_no_reply_punishment,
-    format_punishment_message
+    format_punishment_message,
+    get_user_inventory_summary
 )
 
 def get_user_reply_status(supabase_url, headers, user_email):
@@ -224,6 +225,17 @@ def send_daily_review():
                     content += " / 严格型"
                 if level >= 13:
                     content += " / 毒舌型"
+            
+            # 添加商店提示
+            if level >= 13:
+                content += "\n\n🛒 商店已解锁！"
+                content += "\n格式：购买：道具名"
+                content += "\n示例：购买：拖延对冲券"
+            
+            # 显示背包
+            inventory_summary = get_user_inventory_summary(supabase_url, headers, user_email)
+            if inventory_summary:
+                content += inventory_summary
         
         # 发送到飞书
         message = {

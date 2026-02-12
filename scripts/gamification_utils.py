@@ -1042,3 +1042,348 @@ def generate_personality_feedback(tasks_data, progress_changes, personality_code
     except Exception as e:
         print(f"生成性格化反馈失败: {e}")
         return "感谢你的更新！继续保持，你做得很好。"
+
+
+# ==================== 商店系统相关函数 ====================
+
+def parse_purchase_command(user_message):
+    """
+    解析购买命令
+    
+    Args:
+        user_message: 用户消息内容
+    
+    Returns:
+        str: 道具代码，如果没有购买命令则返回None
+    """
+    import re
+    
+    # 匹配格式：购买：道具名
+    patterns = [
+        r'购买[：:]\s*(.+)',
+        r'买[：:]\s*(.+)',
+        r'兑换[：:]\s*(.+)'
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, user_message)
+        if match:
+            item_name = match.group(1).strip()
+            return item_name
+    
+    return None
+
+def get_shop_item_by_name(supabase_url, headers, item_name):
+    """
+    根据道具名称获取道具信息
+    
+    Returns:
+        dict: 道具信息，如果不存在则返回None
+    """
+    try:
+        # 先尝试精确匹配道具名称
+        query_url = f"{supabase_url}/rest/v1/shop_items?item_name=eq.{item_name}&select=*"
+        response = requests.get(query_url, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data:
+                return data[0]
+        
+        # 如果精确匹配失败，尝试模糊匹配（去掉emoji）
+        query_url = f"{supabase_url}/rest/v1/shop_items?select=*"
+        response = requests.get(query_url, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            all_items = response.json()
+            
+            # 去掉emoji后匹配
+            for item in all_items:
+                clean_name = re.sub(r'[^\w\s]', '', item['item_name'])
+                clean_input = re.sub(r'[^\w\s]', '', item_name)
+                
+                if clean_input in clean_name or clean_name in clean_input:
+                    return item
+        
+        return None
+    except Exception as e:
+        print(f"获取道具信息失败: {e}")
+        return None
+
+def check_purchase_eligibility(user_data, item_data):
+    """
+    检查是否有资格购买道具
+    
+    Returns:
+        dict: 检查结果
+    """
+    user_level = user_data.get('level', 1)
+    user_coins = user_data.get('coins', 0)
+    
+    required_level = item_data.get('required_level', 1)
+    price = item_data.get('price', 0)
+    
+    # 检查等级
+    if user_level < required_level:
+        return {
+            'eligible': False,
+            'reason': 'level_insufficient',
+            'required_level': required_level,
+            'current_level': user_level
+        }
+    
+    # 检查金币
+    if user_coins < price:
+        return {
+            'eligible': False,
+            'reason': 'coins_insufficient',
+            'required_coins': price,
+            'current_coins': user_coins
+        }
+    
+    return {'eligible': True}
+
+def check_usage_limit(supabase_url, headers, user_email, item_code, item_data):
+    """
+    检查道具使用限制
+    
+    Returns:
+        dict: 检查结果
+    """
+    try:
+        usage_limit_type = item_data.get('usage_limit_type', 'unlimited')
+        usage_limit_count = item_data.get('usage_limit_count', 0)
+        
+        if usage_limit_type == 'unlimited':
+            return {'within_limit': True}
+        
+        # 查询用户库存
+        query_url = f"{supabase_url}/rest/v1/user_inventory?user_email=eq.{user_email}&item_code=eq.{item_code}&select=*"
+        response = requests.get(query_url, headers=headers, timeout=30)
+        
+        if response.status_code != 200:
+            return {'within_limit': True}  # 查询失败，允许购买
+        
+        data = response.json()
+        if not data:
+            return {'within_limit': True}  # 没有记录，允许购买
+        
+        inventory = data[0]
+        
+        # 检查限制
+        if usage_limit_type == 'daily':
+            usage_count = inventory.get('usage_count_daily', 0)
+        elif usage_limit_type == 'weekly':
+            usage_count = inventory.get('usage_count_weekly', 0)
+        elif usage_limit_type == 'monthly':
+            usage_count = inventory.get('usage_count_monthly', 0)
+        else:
+            return {'within_limit': True}
+        
+        if usage_count >= usage_limit_count:
+            return {
+                'within_limit': False,
+                'limit_type': usage_limit_type,
+                'limit_count': usage_limit_count,
+                'current_count': usage_count
+            }
+        
+        return {'within_limit': True}
+    except Exception as e:
+        print(f"检查使用限制失败: {e}")
+        return {'within_limit': True}  # 出错时允许购买
+
+def purchase_item(supabase_url, headers, user_email, item_code, item_data):
+    """
+    购买道具
+    
+    Returns:
+        dict: 购买结果
+    """
+    try:
+        price = item_data.get('price', 0)
+        item_name = item_data.get('item_name', '')
+        
+        # 扣除金币
+        user_data = get_user_gamification_data(supabase_url, headers, user_email)
+        if not user_data:
+            return {'success': False, 'reason': '用户数据不存在'}
+        
+        current_coins = user_data.get('coins', 0)
+        new_coins = current_coins - price
+        
+        # 更新金币
+        update_url = f"{supabase_url}/rest/v1/user_gamification?user_email=eq.{user_email}"
+        update_data = {
+            "coins": new_coins,
+            "updated_at": datetime.now().isoformat()
+        }
+        
+        response = requests.patch(update_url, headers=headers, json=update_data, timeout=30)
+        
+        if response.status_code not in [200, 204]:
+            return {'success': False, 'reason': '扣除金币失败'}
+        
+        # 添加到库存
+        add_to_inventory(supabase_url, headers, user_email, item_code)
+        
+        return {
+            'success': True,
+            'item_name': item_name,
+            'price': price,
+            'remaining_coins': new_coins
+        }
+    except Exception as e:
+        print(f"购买道具失败: {e}")
+        return {'success': False, 'reason': str(e)}
+
+def add_to_inventory(supabase_url, headers, user_email, item_code):
+    """添加道具到库存"""
+    try:
+        # 查询是否已存在
+        query_url = f"{supabase_url}/rest/v1/user_inventory?user_email=eq.{user_email}&item_code=eq.{item_code}&select=*"
+        response = requests.get(query_url, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            
+            if data:
+                # 已存在，增加数量
+                inventory_id = data[0]['id']
+                current_quantity = data[0].get('quantity', 0)
+                
+                update_url = f"{supabase_url}/rest/v1/user_inventory?id=eq.{inventory_id}"
+                update_data = {
+                    "quantity": current_quantity + 1,
+                    "updated_at": datetime.now().isoformat()
+                }
+                
+                requests.patch(update_url, headers=headers, json=update_data, timeout=30)
+            else:
+                # 不存在，创建新记录
+                create_url = f"{supabase_url}/rest/v1/user_inventory"
+                create_data = {
+                    "user_email": user_email,
+                    "item_code": item_code,
+                    "quantity": 1
+                }
+                
+                requests.post(create_url, headers=headers, json=create_data, timeout=30)
+        
+        print(f"✅ 道具已添加到库存: {item_code}")
+    except Exception as e:
+        print(f"添加到库存失败: {e}")
+
+def format_purchase_result_message(purchase_result):
+    """格式化购买结果消息"""
+    if not purchase_result.get('success'):
+        reason = purchase_result.get('reason', '未知错误')
+        return f"\n⚠️ 购买失败：{reason}"
+    
+    item_name = purchase_result.get('item_name', '')
+    price = purchase_result.get('price', 0)
+    remaining_coins = purchase_result.get('remaining_coins', 0)
+    
+    return f"""
+╔═══════════════════════════════════╗
+║  🛒 购买成功                      ║
+╠═══════════════════════════════════╣
+║                                   ║
+║  道具：{item_name}                ║
+║  花费：-{price} Coin              ║
+║  余额：{remaining_coins} Coin     ║
+║                                   ║
+║  💡 道具已添加到你的背包          ║
+║                                   ║
+╚═══════════════════════════════════╝"""
+
+def format_purchase_error_message(error_type, error_data):
+    """格式化购买错误消息"""
+    if error_type == 'item_not_found':
+        return "\n⚠️ 购买失败：道具不存在\n\n💡 请检查道具名称是否正确"
+    
+    elif error_type == 'level_insufficient':
+        required_level = error_data.get('required_level', 1)
+        current_level = error_data.get('current_level', 1)
+        return f"""
+⚠️ 购买失败：等级不足
+
+需要等级：LV{required_level}
+当前等级：LV{current_level}
+
+💡 继续升级即可解锁！"""
+    
+    elif error_type == 'coins_insufficient':
+        required_coins = error_data.get('required_coins', 0)
+        current_coins = error_data.get('current_coins', 0)
+        shortage = required_coins - current_coins
+        return f"""
+⚠️ 购买失败：金币不足
+
+需要金币：{required_coins} Coin
+当前金币：{current_coins} Coin
+还差：{shortage} Coin
+
+💡 完成更多任务获得金币！"""
+    
+    elif error_type == 'usage_limit_exceeded':
+        limit_type = error_data.get('limit_type', 'daily')
+        limit_count = error_data.get('limit_count', 0)
+        
+        limit_type_cn = {
+            'daily': '每日',
+            'weekly': '每周',
+            'monthly': '每月'
+        }
+        
+        return f"""
+⚠️ 购买失败：已达到购买限制
+
+{limit_type_cn.get(limit_type, '')}限购：{limit_count}次
+
+💡 请等待限制重置后再购买"""
+    
+    else:
+        return f"\n⚠️ 购买失败：{error_type}"
+
+def get_user_inventory_summary(supabase_url, headers, user_email):
+    """
+    获取用户背包摘要
+    
+    Returns:
+        str: 背包摘要文本
+    """
+    try:
+        query_url = f"{supabase_url}/rest/v1/user_inventory?user_email=eq.{user_email}&select=*"
+        response = requests.get(query_url, headers=headers, timeout=30)
+        
+        if response.status_code != 200:
+            return ""
+        
+        inventory = response.json()
+        
+        if not inventory:
+            return "\n💼 背包：空"
+        
+        # 获取道具详情
+        summary = "\n💼 背包：\n"
+        
+        for item in inventory:
+            item_code = item.get('item_code', '')
+            quantity = item.get('quantity', 0)
+            
+            if quantity > 0:
+                # 获取道具名称
+                item_query_url = f"{supabase_url}/rest/v1/shop_items?item_code=eq.{item_code}&select=item_name"
+                item_response = requests.get(item_query_url, headers=headers, timeout=30)
+                
+                if item_response.status_code == 200:
+                    item_data = item_response.json()
+                    if item_data:
+                        item_name = item_data[0].get('item_name', item_code)
+                        summary += f"   {item_name} x{quantity}\n"
+        
+        return summary
+    except Exception as e:
+        print(f"获取背包摘要失败: {e}")
+        return ""
