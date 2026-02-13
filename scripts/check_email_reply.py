@@ -417,6 +417,13 @@ def check_and_process_email_reply():
         print(f"\n✅ 找到最新回复（{latest_time}）")
         print(f"内容预览: {latest_reply[:100]}...")
         
+        # 提前定义 db_headers，因为后面的命令检测需要用到
+        db_headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json"
+        }
+        
         # 检查是否有性格切换命令
         personality_switch_cmd = parse_personality_switch_command(latest_reply)
         personality_switch_result = None
@@ -526,12 +533,6 @@ def check_and_process_email_reply():
         
         # 更新数据库
         print("\n更新数据库...")
-        
-        db_headers = {
-            "apikey": supabase_key,
-            "Authorization": f"Bearer {supabase_key}",
-            "Content-Type": "application/json"
-        }
         
         feedback_content = "📊 任务更新反馈\n\n"
         
