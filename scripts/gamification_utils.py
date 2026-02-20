@@ -1387,3 +1387,158 @@ def get_user_inventory_summary(supabase_url, headers, user_email):
     except Exception as e:
         print(f"获取背包摘要失败: {e}")
         return ""
+
+
+# ==================== 解锁进度提示相关函数 ====================
+
+def get_next_unlock_info(user_level):
+    """
+    获取下一个解锁信息
+    
+    Args:
+        user_level: 当前等级
+    
+    Returns:
+        dict: 下一个解锁的信息
+    """
+    unlock_milestones = {
+        4: {
+            'level': 4,
+            'features': ['每日成就盲盒', '专业型性格'],
+            'icon': '🎁',
+            'description': '每日成就盲盒 + 专业型性格'
+        },
+        8: {
+            'level': 8,
+            'features': ['周报多维数据透视', '严格型性格'],
+            'icon': '📊',
+            'description': '周报数据透视 + 严格型性格'
+        },
+        13: {
+            'level': 13,
+            'features': ['高级商店', '毒舌型性格'],
+            'icon': '🛒',
+            'description': '高级商店 + 毒舌型性格'
+        },
+        16: {
+            'level': 16,
+            'features': ['高级道具'],
+            'icon': '🏆',
+            'description': '高级道具解锁'
+        },
+        20: {
+            'level': 20,
+            'features': ['特殊道具', '最高等级'],
+            'icon': '👑',
+            'description': '特殊道具 + 最高等级'
+        }
+    }
+    
+    # 找到下一个里程碑
+    for milestone_level in sorted(unlock_milestones.keys()):
+        if user_level < milestone_level:
+            return unlock_milestones[milestone_level]
+    
+    # 已经是最高等级
+    return None
+
+def format_unlock_progress_message(user_data, exp_gained=0):
+    """
+    格式化解锁进度激励消息
+    
+    Args:
+        user_data: 用户游戏化数据
+        exp_gained: 本次获得的经验值
+    
+    Returns:
+        str: 激励消息
+    """
+    current_level = user_data.get('level', 1)
+    current_exp = user_data.get('current_exp', 0)
+    
+    # 获取下一个解锁信息
+    next_unlock = get_next_unlock_info(current_level)
+    
+    if not next_unlock:
+        # 已经是最高等级
+        return "\n🎉 恭喜！你已经达到最高等级LV20，解锁了所有功能！"
+    
+    # 计算距离下一个里程碑还需要多少经验
+    levels_to_go = next_unlock['level'] - current_level
+    
+    # 计算还需要多少总经验值
+    exp_needed = 0
+    for level in range(current_level, next_unlock['level']):
+        exp_needed += LEVEL_EXP_REQUIRED.get(level, 100)
+    
+    # 减去当前已有的经验
+    exp_needed -= current_exp
+    
+    # 生成激励消息
+    if levels_to_go == 1:
+        # 距离下一个里程碑只差1级
+        message = f"\n💪 真棒！再升1级就能解锁 {next_unlock['icon']} {next_unlock['description']}！"
+        message += f"\n   还需要 {exp_needed} EXP"
+        
+        if exp_gained > 0:
+            # 计算按照当前速度还需要多少次
+            times_needed = max(1, exp_needed // exp_gained)
+            message += f"（按今天的速度，大约还需要 {times_needed} 次更新）"
+    
+    elif levels_to_go <= 3:
+        # 距离下一个里程碑2-3级
+        message = f"\n🎯 加油！还差 {levels_to_go} 级可解锁 {next_unlock['icon']} {next_unlock['description']}！"
+        message += f"\n   还需要 {exp_needed} EXP"
+    
+    else:
+        # 距离下一个里程碑较远
+        message = f"\n🌟 继续努力！LV{next_unlock['level']} 可解锁 {next_unlock['icon']} {next_unlock['description']}"
+        message += f"\n   当前 LV{current_level}，还需要 {exp_needed} EXP"
+    
+    return message
+
+def format_current_unlocks(user_level):
+    """
+    格式化当前已解锁的功能列表
+    
+    Args:
+        user_level: 当前等级
+    
+    Returns:
+        str: 已解锁功能列表
+    """
+    unlocked = []
+    
+    if user_level >= 1:
+        unlocked.append("✅ 四象限报告")
+        unlocked.append("✅ 友好型性格")
+    
+    if user_level >= 4:
+        unlocked.append("✅ 每日成就盲盒")
+        unlocked.append("✅ 专业型性格")
+    
+    if user_level >= 8:
+        unlocked.append("✅ 周报数据透视")
+        unlocked.append("✅ 严格型性格")
+    
+    if user_level >= 13:
+        unlocked.append("✅ 高级商店")
+        unlocked.append("✅ 毒舌型性格")
+    
+    if user_level >= 16:
+        unlocked.append("✅ 高级道具")
+    
+    if user_level >= 20:
+        unlocked.append("✅ 特殊道具")
+        unlocked.append("✅ 最高等级")
+    
+    if not unlocked:
+        return ""
+    
+    message = "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    message += "🎁 已解锁功能：\n"
+    for item in unlocked:
+        message += f"   {item}\n"
+    message += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    return message

@@ -38,6 +38,8 @@ from gamification_utils import (
     purchase_item,
     format_purchase_result_message,
     format_purchase_error_message,
+    format_unlock_progress_message
+)
     get_user_inventory_summary
 )
 
@@ -490,6 +492,20 @@ def check_and_process_email_reply():
 - quadrant: 象限(Q1/Q2/Q3/Q4)
 - action: 动作(update/pause/complete)
 
+重要规则：
+1. action字段的判断：
+   - 如果用户明确说"完成"、"已完成"、"做完了"、"finish"、"done"、"100%"，则action="complete"
+   - 如果用户说"暂缓"、"暂停"、"pause"，则action="pause"
+   - 其他情况action="update"
+
+2. progress字段的判断：
+   - 如果action="complete"，progress必须是100
+   - 如果用户说了具体百分比（如50%、80%），使用该百分比
+   - 如果没有说百分比但说了"完成"，progress=100
+   - 如果没有任何进度信息，progress=0
+
+3. 如果用户多次提到同一个任务已完成，一定要设置action="complete"和progress=100
+
 如果有多个任务，返回JSON数组。
 只返回JSON，不要其他内容。"""
         
@@ -717,8 +733,15 @@ def check_and_process_email_reply():
             new_level = update_result.get('new_level')
             level_up_msg = format_level_up_message(old_level, new_level)
             feedback_content += f"\n{level_up_msg}\n"
+        else:
+            # 如果没有升级，显示解锁进度激励
+            if update_result:
+                user_game_data_updated = get_user_gamification_data(supabase_url, db_headers, email_username)
+                if user_game_data_updated:
+                    unlock_progress_msg = format_unlock_progress_message(user_game_data_updated, total_exp_gain)
+                    feedback_content += unlock_progress_msg
         
-        feedback_content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        feedback_content += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         
         # 使用 AI 生成个性化反馈
         print("\n生成个性化反馈...")
