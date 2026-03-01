@@ -38,9 +38,18 @@ from gamification_utils import (
     purchase_item,
     format_purchase_result_message,
     format_purchase_error_message,
-    format_unlock_progress_message
-)
-    get_user_inventory_summary
+    format_unlock_progress_message,
+    get_user_inventory_summary,
+    # v4.0 任务编号系统函数
+    find_task,
+    complete_task,
+    update_task_progress,
+    create_task,
+    pause_task,
+    resume_paused_task,
+    parse_task_operations_v4,
+    process_task_operations_v4,
+    format_operation_feedback_v4
 )
 
 def update_user_reply_tracking(supabase_url, headers, user_email):

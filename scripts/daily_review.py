@@ -18,7 +18,9 @@ from gamification_utils import (
     format_user_status,
     check_and_apply_no_reply_punishment,
     format_punishment_message,
-    get_user_inventory_summary
+    get_user_inventory_summary,
+    # v4.0 任务编号系统函数
+    get_paused_tasks_to_remind
 )
 
 def get_user_reply_status(supabase_url, headers, user_email):
@@ -153,8 +155,8 @@ def send_daily_review():
         # 获取用户游戏化数据
         user_game_data = get_user_gamification_data(supabase_url, headers, user_email)
         
-        # 获取活跃任务
-        query_url = f"{supabase_url}/rest/v1/tasks?user_email=eq.{user_email}&status=eq.active&select=*"
+        # 获取活跃任务（v4.0：添加is_deleted过滤和排序）
+        query_url = f"{supabase_url}/rest/v1/tasks?user_email=eq.{user_email}&status=eq.active&is_deleted=eq.false&order=quadrant.asc,task_order.asc&select=*"
         db_response = requests.get(query_url, headers=headers, timeout=30)
         
         if db_response.status_code != 200:
@@ -162,6 +164,9 @@ def send_daily_review():
             return False
         
         tasks = db_response.json()
+        
+        # 获取需要提醒的暂缓任务（v4.0）
+        paused_tasks = get_paused_tasks_to_remind(supabase_url, headers, user_email)
         
         # 生成个性化问候语
         greeting = generate_personalized_greeting(consecutive_no_reply_days, is_weekend)
@@ -172,45 +177,91 @@ def send_daily_review():
         # 添加四象限说明
         content += format_quadrant_guide() + "\n\n"
         
-        content += "📋 今日任务清单：\n"
+        content += "📋 今日任务清单：\n\n"
         
+        # v4.0：按象限分组显示任务
         if tasks:
+            # 按象限分组
+            tasks_by_quadrant = {1: [], 2: [], 3: [], 4: []}
             for task in tasks:
-                progress = task.get('progress_percentage', 0)
-                task_name = task.get('task_name', '未命名任务')
-                quadrant = f"Q{task.get('quadrant', 1)}"
+                q = task.get('quadrant', 1)
+                tasks_by_quadrant[q].append(task)
+            
+            # 象限名称和经验值倍率
+            quadrant_info = {
+                1: ("Q1 🔴 重要且紧急", "EXP x2.0"),
+                2: ("Q2 🟡 重要非紧急", "EXP x1.5"),
+                3: ("Q3 🔵 紧急非重要", "EXP x1.0"),
+                4: ("Q4 ⚪ 非紧急非重要", "EXP x0.5")
+            }
+            
+            # 显示每个象限
+            for q in [1, 2, 3, 4]:
+                content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                q_name, exp_rate = quadrant_info[q]
+                content += f"{q_name}（{exp_rate}）\n"
+                content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 
-                # 生成进度条
-                filled = int(progress / 10)
-                empty = 10 - filled
-                progress_bar = "■" * filled + "□" * empty
+                if tasks_by_quadrant[q]:
+                    for task in tasks_by_quadrant[q]:
+                        task_order = task.get('task_order', 0)
+                        task_name = task.get('task_name', '未命名任务')
+                        progress = task.get('progress_percentage', 0)
+                        
+                        # 生成进度条
+                        filled = int(progress / 10)
+                        empty = 10 - filled
+                        progress_bar = "■" * filled + "□" * empty
+                        
+                        content += f"  {task_order}. {task_name} [{progress_bar}] {progress}%\n"
+                else:
+                    content += "  （暂无任务）\n"
                 
-                status_emoji = "✅" if progress == 100 else "🔄"
-                
-                content += f"\n{status_emoji} {task_name}\n"
-                content += f"   进度：[{progress_bar}] {progress}%\n"
-                content += f"   象限: {quadrant}\n"
+                content += "\n"
         else:
-            content += "\n暂无进行中的任务\n"
+            content += "暂无进行中的任务\n\n"
+        
+        # v4.0：显示暂缓待办池
+        if paused_tasks:
+            content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            content += "⏸️ 暂缓待办池（每2天提醒一次）\n"
+            content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            
+            for task in paused_tasks:
+                task_order = task.get('task_order', 0)
+                task_name = task.get('task_name', '未命名任务')
+                content += f"  {task_order}. {task_name}\n"
+            
+            content += "\n"
+            
+            # 更新last_reminded_date为今天
+            today = date.today().isoformat()
+            for task in paused_tasks:
+                task_id = task['id']
+                update_url = f"{supabase_url}/rest/v1/tasks?id=eq.{task_id}"
+                requests.patch(update_url, headers=headers, json={"last_reminded_date": today}, timeout=30)
+            
+            print(f"✅ 更新了 {len(paused_tasks)} 个暂缓任务的提醒日期")
         
         # 根据连续未回复天数调整提示语
         if consecutive_no_reply_days >= 3:
-            content += "\n\n⚠️ 重要提醒：\n"
+            content += "\n⚠️ 重要提醒：\n"
             content += f"已经{consecutive_no_reply_days}天没有更新任务了！\n"
             content += "长时间不复盘可能会让任务失控，今天一定要回复哦！\n"
         elif consecutive_no_reply_days >= 1:
-            content += "\n\n💡 温馨提示：\n"
+            content += "\n💡 温馨提示：\n"
             content += "定期复盘能帮助你更好地掌控任务进度~\n"
         
-        content += "\n\n💬 请回复以下内容：\n"
-        content += "1. 今天完成了哪些任务？进度如何？\n"
-        content += "2. 明天计划做什么？\n"
-        content += "3. 有哪些任务需要暂缓？\n"
-        content += "\n📝 回复格式示例：\n"
-        content += "• 更新进度：用户登录功能80% Q1\n"
-        content += "• 标记完成：答辩模拟已完成 Q1（或：答辩模拟100% Q1）\n"
-        content += "• 暂缓任务：前端优化暂缓\n"
-        content += "\n⚠️ 重要：如果任务已完成，请明确说\"已完成\"或\"100%\"，否则会继续显示！"
+        # v4.0：更新回复格式示例（支持任务编号）
+        content += "\n💬 回复格式示例：\n"
+        content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        content += "✅ 标记完成：Q1任务1完成\n"
+        content += "📊 更新进度：Q1任务2进度60%\n"
+        content += "🆕 新增任务：答辩模拟 Q1\n"
+        content += "⏸️ 暂缓任务：Q2任务1暂缓\n"
+        content += "🔄 恢复任务：暂缓任务1恢复到Q1\n"
+        content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        content += "\n⚠️ 重要：完成的任务会自动消失，不再重复出现！"
         
         # 添加用户状态显示
         if user_game_data:

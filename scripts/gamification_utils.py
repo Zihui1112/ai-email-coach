@@ -1542,3 +1542,892 @@ def format_current_unlocks(user_level):
     message += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
     return message
+
+
+# ============================================
+# v4.0 任务编号系统函数
+# ============================================
+
+def find_task(supabase_url, headers, user_email, quadrant, task_number):
+    """
+    根据用户邮箱、象限和任务编号查找任务
+    
+    参数:
+        supabase_url: Supabase URL
+        headers: 请求头
+        user_email: 用户邮箱
+        quadrant: 象限 (1-4)
+        task_number: 任务编号 (1, 2, 3...)
+    
+    返回:
+        任务对象（字典）或 None
+    """
+    try:
+        # 查询条件：user_email + quadrant + task_order + is_deleted=FALSE
+        response = requests.get(
+            f"{supabase_url}/rest/v1/tasks",
+            headers=headers,
+            params={
+                "user_email": f"eq.{user_email}",
+                "quadrant": f"eq.{quadrant}",
+                "task_order": f"eq.{task_number}",
+                "is_deleted": "eq.false",
+                "select": "*"
+            }
+        )
+        
+        if response.status_code == 200:
+            tasks = response.json()
+            if tasks and len(tasks) > 0:
+                return tasks[0]
+            else:
+                return None
+        else:
+            print(f"❌ 查找任务失败: {response.status_code} - {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ 查找任务异常: {str(e)}")
+        return None
+
+
+def get_max_task_order(supabase_url, headers, user_email, quadrant):
+    """
+    获取指定象限的最大任务编号
+    
+    参数:
+        supabase_url: Supabase URL
+        headers: 请求头
+        user_email: 用户邮箱
+        quadrant: 象限 (1-4)
+    
+    返回:
+        最大编号（整数），如果无任务返回 0
+    """
+    try:
+        # 查询条件：user_email + quadrant + status='active' + is_deleted=FALSE
+        # 按 task_order 降序排序，取第一个
+        response = requests.get(
+            f"{supabase_url}/rest/v1/tasks",
+            headers=headers,
+            params={
+                "user_email": f"eq.{user_email}",
+                "quadrant": f"eq.{quadrant}",
+                "status": "eq.active",
+                "is_deleted": "eq.false",
+                "select": "task_order",
+                "order": "task_order.desc",
+                "limit": "1"
+            }
+        )
+        
+        if response.status_code == 200:
+            tasks = response.json()
+            if tasks and len(tasks) > 0:
+                return tasks[0].get('task_order', 0)
+            else:
+                return 0
+        else:
+            print(f"❌ 获取最大编号失败: {response.status_code} - {response.text}")
+            return 0
+            
+    except Exception as e:
+        print(f"❌ 获取最大编号异常: {str(e)}")
+        return 0
+
+
+def find_paused_task(supabase_url, headers, user_email, task_number):
+    """
+    根据用户邮箱和任务编号查找暂缓任务
+    
+    参数:
+        supabase_url: Supabase URL
+        headers: 请求头
+        user_email: 用户邮箱
+        task_number: 暂缓任务编号 (1, 2, 3...)
+    
+    返回:
+        任务对象（字典）或 None
+    """
+    try:
+        # 查询条件：user_email + task_order + status='paused' + is_deleted=FALSE
+        response = requests.get(
+            f"{supabase_url}/rest/v1/tasks",
+            headers=headers,
+            params={
+                "user_email": f"eq.{user_email}",
+                "task_order": f"eq.{task_number}",
+                "status": "eq.paused",
+                "is_deleted": "eq.false",
+                "select": "*"
+            }
+        )
+        
+        if response.status_code == 200:
+            tasks = response.json()
+            if tasks and len(tasks) > 0:
+                return tasks[0]
+            else:
+                return None
+        else:
+            print(f"❌ 查找暂缓任务失败: {response.status_code} - {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ 查找暂缓任务异常: {str(e)}")
+        return None
+
+
+def get_paused_tasks_to_remind(supabase_url, headers, user_email):
+    """
+    获取需要提醒的暂缓任务（last_reminded_date 为 NULL 或距今超过2天）
+    
+    参数:
+        supabase_url: Supabase URL
+        headers: 请求头
+        user_email: 用户邮箱
+    
+    返回:
+        任务列表（按 task_order 升序）
+    """
+    try:
+        from datetime import datetime, timedelta
+        
+        # 计算2天前的日期
+        two_days_ago = (datetime.now() - timedelta(days=2)).strftime('%Y-%m-%d')
+        
+        # 查询条件：status='paused' + is_deleted=FALSE + 
+        # (last_reminded_date IS NULL OR last_reminded_date <= two_days_ago)
+        response = requests.get(
+            f"{supabase_url}/rest/v1/tasks",
+            headers=headers,
+            params={
+                "user_email": f"eq.{user_email}",
+                "status": "eq.paused",
+                "is_deleted": "eq.false",
+                "or": f"(last_reminded_date.is.null,last_reminded_date.lte.{two_days_ago})",
+                "select": "*",
+                "order": "task_order.asc"
+            }
+        )
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"❌ 获取暂缓任务失败: {response.status_code} - {response.text}")
+            return []
+            
+    except Exception as e:
+        print(f"❌ 获取暂缓任务异常: {str(e)}")
+        return []
+
+
+
+def reorder_tasks(supabase_url, headers, user_email, quadrant):
+    """
+    重新排序指定象限的所有活跃任务，确保编号连续（1, 2, 3...）
+    
+    参数:
+        supabase_url: Supabase URL
+        headers: 请求头
+        user_email: 用户邮箱
+        quadrant: 象限 (1-4)
+    
+    返回:
+        成功返回 True，失败返回 False
+    """
+    try:
+        # 1. 获取该象限所有活跃任务（按 task_order 排序）
+        response = requests.get(
+            f"{supabase_url}/rest/v1/tasks",
+            headers=headers,
+            params={
+                "user_email": f"eq.{user_email}",
+                "quadrant": f"eq.{quadrant}",
+                "status": "eq.active",
+                "is_deleted": "eq.false",
+                "select": "id,task_order",
+                "order": "task_order.asc"
+            }
+        )
+        
+        if response.status_code != 200:
+            print(f"❌ 获取任务列表失败: {response.status_code} - {response.text}")
+            return False
+        
+        tasks = response.json()
+        
+        if not tasks:
+            # 没有任务，无需重排序
+            return True
+        
+        # 2. 重新分配编号（从1开始）
+        for index, task in enumerate(tasks, start=1):
+            new_order = index
+            new_display_number = f"Q{quadrant}-{new_order}"
+            
+            # 更新任务
+            update_response = requests.patch(
+                f"{supabase_url}/rest/v1/tasks",
+                headers=headers,
+                params={"id": f"eq.{task['id']}"},
+                json={
+                    "task_order": new_order,
+                    "display_number": new_display_number
+                }
+            )
+            
+            if update_response.status_code not in [200, 204]:
+                print(f"❌ 更新任务编号失败: {update_response.status_code} - {update_response.text}")
+                return False
+        
+        print(f"✓ Q{quadrant} 重排序完成，共 {len(tasks)} 个任务")
+        return True
+        
+    except Exception as e:
+        print(f"❌ 重排序异常: {str(e)}")
+        return False
+
+
+def reorder_paused_tasks(supabase_url, headers, user_email):
+    """
+    重新排序所有暂缓任务，确保编号连续（1, 2, 3...）
+    
+    参数:
+        supabase_url: Supabase URL
+        headers: 请求头
+        user_email: 用户邮箱
+    
+    返回:
+        成功返回 True，失败返回 False
+    """
+    try:
+        # 1. 获取所有暂缓任务（按 task_order 排序）
+        response = requests.get(
+            f"{supabase_url}/rest/v1/tasks",
+            headers=headers,
+            params={
+                "user_email": f"eq.{user_email}",
+                "status": "eq.paused",
+                "is_deleted": "eq.false",
+                "select": "id,task_order",
+                "order": "task_order.asc"
+            }
+        )
+        
+        if response.status_code != 200:
+            print(f"❌ 获取暂缓任务列表失败: {response.status_code} - {response.text}")
+            return False
+        
+        tasks = response.json()
+        
+        if not tasks:
+            # 没有暂缓任务，无需重排序
+            return True
+        
+        # 2. 重新分配编号（从1开始）
+        for index, task in enumerate(tasks, start=1):
+            new_order = index
+            new_display_number = f"暂缓-{new_order}"
+            
+            # 更新任务
+            update_response = requests.patch(
+                f"{supabase_url}/rest/v1/tasks",
+                headers=headers,
+                params={"id": f"eq.{task['id']}"},
+                json={
+                    "task_order": new_order,
+                    "display_number": new_display_number
+                }
+            )
+            
+            if update_response.status_code not in [200, 204]:
+                print(f"❌ 更新暂缓任务编号失败: {update_response.status_code} - {update_response.text}")
+                return False
+        
+        print(f"✓ 暂缓任务重排序完成，共 {len(tasks)} 个任务")
+        return True
+        
+    except Exception as e:
+        print(f"❌ 暂缓任务重排序异常: {str(e)}")
+        return False
+
+
+
+def complete_task(supabase_url, headers, user_email, quadrant, task_number):
+    """
+    完成任务：软删除 + 重排序 + 奖励计算
+    
+    参数:
+        supabase_url: Supabase URL
+        headers: 请求头
+        user_email: 用户邮箱
+        quadrant: 象限 (1-4)
+        task_number: 任务编号
+    
+    返回:
+        成功返回 {'success': True, 'task_name': ..., 'exp_gain': ..., 'coins_gain': ...}
+        失败返回 {'success': False, 'error': ...}
+    """
+    try:
+        from datetime import datetime
+        
+        # 1. 查找任务
+        task = find_task(supabase_url, headers, user_email, quadrant, task_number)
+        if not task:
+            return {'success': False, 'error': f'任务不存在：Q{quadrant}任务{task_number}'}
+        
+        task_name = task['task_name']
+        current_progress = task.get('progress_percentage', 0)
+        
+        # 2. 计算奖励（100% - 当前进度）
+        progress_change = 100 - current_progress
+        exp_gain = calculate_exp_gain(progress_change, quadrant)
+        coins_gain = calculate_coins_gain(100)  # 完成任务给金币
+        
+        # 3. 软删除任务
+        update_response = requests.patch(
+            f"{supabase_url}/rest/v1/tasks",
+            headers=headers,
+            params={"id": f"eq.{task['id']}"},
+            json={
+                "is_deleted": True,
+                "deleted_at": datetime.now().isoformat(),
+                "status": "completed",
+                "progress_percentage": 100
+            }
+        )
+        
+        if update_response.status_code not in [200, 204]:
+            return {'success': False, 'error': f'软删除失败: {update_response.text}'}
+        
+        # 4. 重新排序该象限
+        reorder_success = reorder_tasks(supabase_url, headers, user_email, quadrant)
+        if not reorder_success:
+            print(f"⚠️ 重排序失败，但任务已完成")
+        
+        # 5. 发放奖励
+        update_user_exp_and_coins(supabase_url, headers, user_email, exp_gain, coins_gain, 
+                                   reason=f"完成任务：{task_name}")
+        
+        return {
+            'success': True,
+            'task_name': task_name,
+            'exp_gain': exp_gain,
+            'coins_gain': coins_gain,
+            'quadrant': quadrant,
+            'task_number': task_number
+        }
+        
+    except Exception as e:
+        return {'success': False, 'error': f'完成任务异常: {str(e)}'}
+
+
+def update_task_progress(supabase_url, headers, user_email, quadrant, task_number, new_progress):
+    """
+    更新任务进度：计算增量EXP + 自动完成（如果100%）
+    
+    参数:
+        supabase_url: Supabase URL
+        headers: 请求头
+        user_email: 用户邮箱
+        quadrant: 象限 (1-4)
+        task_number: 任务编号
+        new_progress: 新进度（0-100）
+    
+    返回:
+        成功返回 {'success': True, 'task_name': ..., 'old_progress': ..., 'new_progress': ..., 'exp_gain': ...}
+        失败返回 {'success': False, 'error': ...}
+    """
+    try:
+        from datetime import datetime
+        
+        # 1. 查找任务
+        task = find_task(supabase_url, headers, user_email, quadrant, task_number)
+        if not task:
+            return {'success': False, 'error': f'任务不存在：Q{quadrant}任务{task_number}'}
+        
+        task_name = task['task_name']
+        old_progress = task.get('progress_percentage', 0)
+        
+        # 2. 如果新进度 = 100%，自动调用 complete_task()
+        if new_progress >= 100:
+            return complete_task(supabase_url, headers, user_email, quadrant, task_number)
+        
+        # 3. 计算进度变化量
+        progress_change = new_progress - old_progress
+        
+        # 4. 计算增量EXP（只有进度增加才给奖励）
+        exp_gain = 0
+        coins_gain = 0
+        if progress_change > 0:
+            exp_gain = calculate_exp_gain(progress_change, quadrant)
+            coins_gain = calculate_coins_gain(new_progress)
+        
+        # 5. 更新任务进度
+        update_response = requests.patch(
+            f"{supabase_url}/rest/v1/tasks",
+            headers=headers,
+            params={"id": f"eq.{task['id']}"},
+            json={
+                "progress_percentage": new_progress,
+                "updated_at": datetime.now().isoformat(),
+                "last_progress_update": datetime.now().date().isoformat()
+            }
+        )
+        
+        if update_response.status_code not in [200, 204]:
+            return {'success': False, 'error': f'更新进度失败: {update_response.text}'}
+        
+        # 6. 发放奖励（如果有）
+        if exp_gain > 0:
+            update_user_exp_and_coins(supabase_url, headers, user_email, exp_gain, coins_gain,
+                                       reason=f"更新任务进度：{task_name} ({old_progress}% → {new_progress}%)")
+        
+        return {
+            'success': True,
+            'task_name': task_name,
+            'old_progress': old_progress,
+            'new_progress': new_progress,
+            'exp_gain': exp_gain,
+            'coins_gain': coins_gain,
+            'quadrant': quadrant,
+            'task_number': task_number
+        }
+        
+    except Exception as e:
+        return {'success': False, 'error': f'更新进度异常: {str(e)}'}
+
+
+def create_task(supabase_url, headers, user_email, task_name, quadrant):
+    """
+    新增任务：分配编号 + 创建任务
+    
+    参数:
+        supabase_url: Supabase URL
+        headers: 请求头
+        user_email: 用户邮箱
+        task_name: 任务名称
+        quadrant: 象限 (1-4)
+    
+    返回:
+        成功返回 {'success': True, 'task_name': ..., 'display_number': ...}
+        失败返回 {'success': False, 'error': ...}
+    """
+    try:
+        from datetime import datetime
+        
+        # 1. 获取该象限最大编号
+        max_order = get_max_task_order(supabase_url, headers, user_email, quadrant)
+        new_order = max_order + 1
+        
+        # 2. 生成显示编号
+        display_number = f"Q{quadrant}-{new_order}"
+        
+        # 3. 创建任务
+        create_response = requests.post(
+            f"{supabase_url}/rest/v1/tasks",
+            headers=headers,
+            json={
+                "user_email": user_email,
+                "task_name": task_name,
+                "quadrant": quadrant,
+                "task_order": new_order,
+                "display_number": display_number,
+                "progress_percentage": 0,
+                "status": "active",
+                "is_deleted": False,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat()
+            }
+        )
+        
+        if create_response.status_code not in [200, 201]:
+            return {'success': False, 'error': f'创建任务失败: {create_response.text}'}
+        
+        return {
+            'success': True,
+            'task_name': task_name,
+            'display_number': display_number,
+            'quadrant': quadrant,
+            'task_number': new_order
+        }
+        
+    except Exception as e:
+        return {'success': False, 'error': f'创建任务异常: {str(e)}'}
+
+
+def pause_task(supabase_url, headers, user_email, quadrant, task_number):
+    """
+    暂缓任务：修改状态 + 双重重排序
+    
+    参数:
+        supabase_url: Supabase URL
+        headers: 请求头
+        user_email: 用户邮箱
+        quadrant: 象限 (1-4)
+        task_number: 任务编号
+    
+    返回:
+        成功返回 {'success': True, 'task_name': ...}
+        失败返回 {'success': False, 'error': ...}
+    """
+    try:
+        from datetime import datetime
+        
+        # 1. 查找任务
+        task = find_task(supabase_url, headers, user_email, quadrant, task_number)
+        if not task:
+            return {'success': False, 'error': f'任务不存在：Q{quadrant}任务{task_number}'}
+        
+        task_name = task['task_name']
+        
+        # 2. 修改状态为 paused
+        update_response = requests.patch(
+            f"{supabase_url}/rest/v1/tasks",
+            headers=headers,
+            params={"id": f"eq.{task['id']}"},
+            json={
+                "status": "paused",
+                "last_reminded_date": datetime.now().date().isoformat()
+            }
+        )
+        
+        if update_response.status_code not in [200, 204]:
+            return {'success': False, 'error': f'暂缓任务失败: {update_response.text}'}
+        
+        # 3. 重新排序原象限
+        reorder_tasks(supabase_url, headers, user_email, quadrant)
+        
+        # 4. 重新排序暂缓池
+        reorder_paused_tasks(supabase_url, headers, user_email)
+        
+        return {
+            'success': True,
+            'task_name': task_name,
+            'quadrant': quadrant,
+            'task_number': task_number
+        }
+        
+    except Exception as e:
+        return {'success': False, 'error': f'暂缓任务异常: {str(e)}'}
+
+
+def resume_paused_task(supabase_url, headers, user_email, paused_task_number, target_quadrant):
+    """
+    恢复暂缓任务：修改状态 + 重新编号
+    
+    参数:
+        supabase_url: Supabase URL
+        headers: 请求头
+        user_email: 用户邮箱
+        paused_task_number: 暂缓任务编号
+        target_quadrant: 目标象限 (1-4)
+    
+    返回:
+        成功返回 {'success': True, 'task_name': ..., 'new_display_number': ...}
+        失败返回 {'success': False, 'error': ...}
+    """
+    try:
+        # 1. 查找暂缓任务
+        task = find_paused_task(supabase_url, headers, user_email, paused_task_number)
+        if not task:
+            return {'success': False, 'error': f'暂缓任务不存在：暂缓任务{paused_task_number}'}
+        
+        task_name = task['task_name']
+        
+        # 2. 获取目标象限最大编号
+        max_order = get_max_task_order(supabase_url, headers, user_email, target_quadrant)
+        new_order = max_order + 1
+        
+        # 3. 生成新的显示编号
+        new_display_number = f"Q{target_quadrant}-{new_order}"
+        
+        # 4. 恢复任务
+        update_response = requests.patch(
+            f"{supabase_url}/rest/v1/tasks",
+            headers=headers,
+            params={"id": f"eq.{task['id']}"},
+            json={
+                "status": "active",
+                "quadrant": target_quadrant,
+                "task_order": new_order,
+                "display_number": new_display_number
+            }
+        )
+        
+        if update_response.status_code not in [200, 204]:
+            return {'success': False, 'error': f'恢复任务失败: {update_response.text}'}
+        
+        # 5. 重新排序暂缓池
+        reorder_paused_tasks(supabase_url, headers, user_email)
+        
+        return {
+            'success': True,
+            'task_name': task_name,
+            'new_display_number': new_display_number,
+            'target_quadrant': target_quadrant,
+            'new_task_number': new_order
+        }
+        
+    except Exception as e:
+        return {'success': False, 'error': f'恢复任务异常: {str(e)}'}
+
+
+
+def parse_task_operations_v4(user_reply, deepseek_api_key):
+    """
+    v4.0：使用AI解析用户回复，提取任务操作（支持任务编号）
+    
+    参数:
+        user_reply: 用户回复内容
+        deepseek_api_key: DeepSeek API密钥
+    
+    返回:
+        成功返回操作列表，失败返回None
+    """
+    try:
+        import requests
+        import json
+        import re
+        
+        prompt = f"""请解析用户的任务更新回复，提取任务操作信息。
+
+用户回复：
+{user_reply}
+
+解析规则：
+1. 任务引用方式：
+   - 编号引用：Q1任务1、Q1-1、Q2任务2、Q2-2
+   - 暂缓任务引用：暂缓任务1、暂缓1
+   - 新增任务：直接写任务名 + 象限
+
+2. 操作类型识别：
+   - 完成：包含"完成"、"done"、"finish"、"100%" → operation_type="complete"
+   - 暂缓：包含"暂缓"、"pause" → operation_type="pause"
+   - 恢复：包含"恢复"、"resume" → operation_type="resume"
+   - 更新进度：包含百分比数字 → operation_type="update"
+   - 新增：包含"新增"或直接写任务名 → operation_type="create"
+
+3. 返回JSON格式：
+{{
+  "operation_type": "complete|update|pause|resume|create",
+  "quadrant": 1,  // 象限数字 1-4
+  "task_number": 1,  // 任务编号（1, 2, 3...）
+  "task_name": "任务名称",  // 仅新增任务时需要
+  "progress": 60  // 仅更新进度时需要
+}}
+
+如果有多个操作，返回JSON数组。
+只返回JSON，不要其他内容。
+"""
+        
+        headers = {
+            "Authorization": f"Bearer {deepseek_api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "deepseek-chat",
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7
+        }
+        
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        if response.status_code != 200:
+            print(f"❌ AI解析失败: {response.status_code}")
+            return None
+        
+        result = response.json()
+        ai_response = result['choices'][0]['message']['content'].strip()
+        
+        # 清理markdown代码块
+        ai_response = re.sub(r'```json\s*', '', ai_response)
+        ai_response = re.sub(r'```\s*', '', ai_response)
+        ai_response = ai_response.strip()
+        
+        print(f"AI解析结果: {ai_response}")
+        
+        # 解析JSON
+        operations = json.loads(ai_response)
+        if not isinstance(operations, list):
+            operations = [operations]
+        
+        return operations
+        
+    except Exception as e:
+        print(f"❌ 解析任务操作异常: {str(e)}")
+        return None
+
+
+def process_task_operations_v4(supabase_url, headers, user_email, operations):
+    """
+    v4.0：处理任务操作列表
+    
+    参数:
+        supabase_url: Supabase URL
+        headers: 请求头
+        user_email: 用户邮箱
+        operations: 操作列表
+    
+    返回:
+        处理结果列表
+    """
+    results = []
+    total_exp_gain = 0
+    total_coins_gain = 0
+    
+    for op in operations:
+        op_type = op.get('operation_type', '').lower()
+        quadrant = op.get('quadrant')
+        task_number = op.get('task_number')
+        
+        result = None
+        
+        if op_type == 'complete':
+            # 完成任务
+            result = complete_task(supabase_url, headers, user_email, quadrant, task_number)
+            
+        elif op_type == 'update':
+            # 更新进度
+            progress = op.get('progress', 0)
+            result = update_task_progress(supabase_url, headers, user_email, quadrant, task_number, progress)
+            
+        elif op_type == 'create':
+            # 新增任务
+            task_name = op.get('task_name', '')
+            result = create_task(supabase_url, headers, user_email, task_name, quadrant)
+            
+        elif op_type == 'pause':
+            # 暂缓任务
+            result = pause_task(supabase_url, headers, user_email, quadrant, task_number)
+            
+        elif op_type == 'resume':
+            # 恢复暂缓任务
+            target_quadrant = quadrant
+            result = resume_paused_task(supabase_url, headers, user_email, task_number, target_quadrant)
+        
+        if result:
+            results.append({
+                'operation': op_type,
+                'result': result
+            })
+            
+            # 累计经验值和金币
+            if result.get('success'):
+                total_exp_gain += result.get('exp_gain', 0)
+                total_coins_gain += result.get('coins_gain', 0)
+    
+    return {
+        'results': results,
+        'total_exp_gain': total_exp_gain,
+        'total_coins_gain': total_coins_gain
+    }
+
+
+def format_operation_feedback_v4(operation_results):
+    """
+    v4.0：格式化任务操作反馈消息
+    
+    参数:
+        operation_results: 操作结果（包含results, total_exp_gain, total_coins_gain）
+    
+    返回:
+        格式化的反馈消息
+    """
+    feedback = "📊 任务更新反馈\n\n"
+    
+    results = operation_results.get('results', [])
+    
+    for item in results:
+        op = item['operation']
+        result = item['result']
+        
+        if not result.get('success'):
+            # 操作失败
+            error = result.get('error', '未知错误')
+            feedback += f"❌ 操作失败：{error}\n\n"
+            continue
+        
+        # 操作成功
+        if op == 'complete':
+            task_name = result.get('task_name', '')
+            exp_gain = result.get('exp_gain', 0)
+            coins_gain = result.get('coins_gain', 0)
+            quadrant = result.get('quadrant', 1)
+            task_number = result.get('task_number', 0)
+            
+            feedback += f"✅ 完成任务：{task_name}\n"
+            feedback += f"   编号：Q{quadrant}任务{task_number}\n"
+            feedback += f"   💫 +{exp_gain} EXP\n"
+            feedback += f"   💰 +{coins_gain} Coin\n\n"
+            
+        elif op == 'update':
+            task_name = result.get('task_name', '')
+            old_progress = result.get('old_progress', 0)
+            new_progress = result.get('new_progress', 0)
+            exp_gain = result.get('exp_gain', 0)
+            quadrant = result.get('quadrant', 1)
+            task_number = result.get('task_number', 0)
+            
+            # 生成进度条
+            filled = int(new_progress / 10)
+            empty = 10 - filled
+            progress_bar = "■" * filled + "□" * empty
+            
+            feedback += f"🔄 更新进度：{task_name}\n"
+            feedback += f"   编号：Q{quadrant}任务{task_number}\n"
+            feedback += f"   进度：[{progress_bar}] {old_progress}% → {new_progress}%\n"
+            if exp_gain > 0:
+                feedback += f"   💫 +{exp_gain} EXP\n"
+            feedback += "\n"
+            
+        elif op == 'create':
+            task_name = result.get('task_name', '')
+            display_number = result.get('display_number', '')
+            quadrant = result.get('quadrant', 1)
+            
+            feedback += f"🆕 新增任务：{task_name}\n"
+            feedback += f"   编号：{display_number}\n"
+            feedback += f"   象限：Q{quadrant}\n\n"
+            
+        elif op == 'pause':
+            task_name = result.get('task_name', '')
+            quadrant = result.get('quadrant', 1)
+            task_number = result.get('task_number', 0)
+            
+            feedback += f"⏸️ 暂缓任务：{task_name}\n"
+            feedback += f"   原编号：Q{quadrant}任务{task_number}\n"
+            feedback += f"   已移入暂缓待办池\n\n"
+            
+        elif op == 'resume':
+            task_name = result.get('task_name', '')
+            new_display_number = result.get('new_display_number', '')
+            target_quadrant = result.get('target_quadrant', 1)
+            
+            feedback += f"🔄 恢复任务：{task_name}\n"
+            feedback += f"   新编号：{new_display_number}\n"
+            feedback += f"   目标象限：Q{target_quadrant}\n\n"
+    
+    # 添加总结
+    total_exp = operation_results.get('total_exp_gain', 0)
+    total_coins = operation_results.get('total_coins_gain', 0)
+    
+    if total_exp > 0 or total_coins > 0:
+        feedback += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        feedback += "📈 本次收获：\n"
+        if total_exp > 0:
+            feedback += f"   💫 经验值：+{total_exp} EXP\n"
+        if total_coins > 0:
+            feedback += f"   💰 金币：+{total_coins} Coin\n"
+        feedback += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    return feedback
