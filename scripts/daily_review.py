@@ -171,15 +171,12 @@ def send_daily_review():
         # 生成个性化问候语
         greeting = generate_personalized_greeting(consecutive_no_reply_days, is_weekend)
         
-        # 生成消息内容
+        # 生成消息内容（v4.1：极简风格）
         content = f"{greeting}\n\n"
         
-        # 添加四象限说明
-        content += format_quadrant_guide() + "\n\n"
+        content += "📋 今日任务清单\n\n"
         
-        content += "📋 今日任务清单：\n\n"
-        
-        # v4.0：按象限分组显示任务
+        # v4.1：按象限分组显示任务（极简风格）
         if tasks:
             # 按象限分组
             tasks_by_quadrant = {1: [], 2: [], 3: [], 4: []}
@@ -195,12 +192,10 @@ def send_daily_review():
                 4: ("Q4 ⚪ 非紧急非重要", "EXP x0.5")
             }
             
-            # 显示每个象限
+            # 显示每个象限（极简风格，无分隔线）
             for q in [1, 2, 3, 4]:
-                content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
                 q_name, exp_rate = quadrant_info[q]
-                content += f"{q_name}（{exp_rate}）\n"
-                content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                content += f"{q_name} ({exp_rate})\n"
                 
                 if tasks_by_quadrant[q]:
                     for task in tasks_by_quadrant[q]:
@@ -213,24 +208,22 @@ def send_daily_review():
                         empty = 10 - filled
                         progress_bar = "■" * filled + "□" * empty
                         
-                        content += f"  {task_order}. {task_name} [{progress_bar}] {progress}%\n"
+                        content += f"{task_order}. {task_name} [{progress_bar}] {progress}%\n"
                 else:
-                    content += "  （暂无任务）\n"
+                    content += "（暂无任务）\n"
                 
-                content += "\n"
+                content += "\n"  # 象限之间用空行分隔
         else:
             content += "暂无进行中的任务\n\n"
         
-        # v4.0：显示暂缓待办池
+        # v4.1：显示暂缓待办池（极简风格）
         if paused_tasks:
-            content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            content += "⏸️ 暂缓待办池（每2天提醒一次）\n"
-            content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            content += "⏸️ 暂缓待办池\n"
             
             for task in paused_tasks:
                 task_order = task.get('task_order', 0)
                 task_name = task.get('task_name', '未命名任务')
-                content += f"  {task_order}. {task_name}\n"
+                content += f"{task_order}. {task_name}\n"
             
             content += "\n"
             
@@ -252,16 +245,13 @@ def send_daily_review():
             content += "\n💡 温馨提示：\n"
             content += "定期复盘能帮助你更好地掌控任务进度~\n"
         
-        # v4.0：更新回复格式示例（支持任务编号）
-        content += "\n💬 回复格式示例：\n"
-        content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        content += "✅ 标记完成：Q1任务1完成\n"
-        content += "📊 更新进度：Q1任务2进度60%\n"
-        content += "🆕 新增任务：答辩模拟 Q1\n"
-        content += "⏸️ 暂缓任务：Q2任务1暂缓\n"
-        content += "🔄 恢复任务：暂缓任务1恢复到Q1\n"
-        content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        content += "\n⚠️ 重要：完成的任务会自动消失，不再重复出现！"
+        # v4.1：更新回复格式示例（简洁清晰）
+        content += "💬 回复格式示例\n"
+        content += "Q1: 1完成; 2进度50%\n"
+        content += "Q2: 1暂缓\n"
+        content += "新增：写论文 Q1\n"
+        content += "暂缓任务1恢复到Q1\n"
+        content += "\n⚠️ 提示：完成的任务会自动消失，不再重复出现"
         
         # 添加用户状态显示
         if user_game_data:
@@ -271,21 +261,18 @@ def send_daily_review():
             if punishment_result:
                 content += "\n\n" + format_punishment_message(punishment_result)
             
-            # 添加性格切换提示
+            # 添加性格切换提示（简化）
             level = user_game_data.get('level', 1)
             if level >= 4:
-                content += "\n\n💡 提示：你可以在回复中切换AI性格"
-                content += "\n格式：切换性格：专业型"
+                content += "\n\n💡 可用功能：切换AI性格"
                 if level >= 8:
-                    content += " / 严格型"
+                    content += "（专业型/严格型）"
                 if level >= 13:
-                    content += " / 毒舌型"
+                    content += "（专业型/严格型/毒舌型）"
             
-            # 添加商店提示
+            # 添加商店提示（简化）
             if level >= 13:
-                content += "\n\n🛒 商店已解锁！"
-                content += "\n格式：购买：道具名"
-                content += "\n示例：购买：拖延对冲券"
+                content += "\n🛒 商店已解锁（格式：购买：道具名）"
             
             # 显示背包
             inventory_summary = get_user_inventory_summary(supabase_url, headers, user_email)

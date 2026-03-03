@@ -1,7 +1,6 @@
 """
 检查邮件回复并自动处理 - GitHub Actions
-每天23:30自动运行，检查用户的邮件回复
-v3.0 - 添加游戏化系统（等级、经验值、金币）
+v4.1 - 使用任务编号系统 + 极简反馈格式
 """
 import os
 import sys
@@ -18,8 +17,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 导入游戏化工具
 from gamification_utils import (
-    calculate_exp_gain,
-    calculate_coins_gain,
     update_user_exp_and_coins,
     check_and_update_q1_streak,
     format_level_up_message,
@@ -41,12 +38,6 @@ from gamification_utils import (
     format_unlock_progress_message,
     get_user_inventory_summary,
     # v4.0 任务编号系统函数
-    find_task,
-    complete_task,
-    update_task_progress,
-    create_task,
-    pause_task,
-    resume_paused_task,
     parse_task_operations_v4,
     process_task_operations_v4,
     format_operation_feedback_v4
@@ -59,11 +50,10 @@ def update_user_reply_tracking(supabase_url, headers, user_email):
         update_data = {
             "last_reply_date": date.today().isoformat(),
             "consecutive_no_reply_days": 0,
-            "total_replies": 1,  # 这里应该是增量，但为了简化先设为1
+            "total_replies": 1,
             "updated_at": datetime.now().isoformat()
         }
         
-        # 先尝试更新
         response = requests.patch(update_url, headers=headers, json=update_data, timeout=30)
         
         if response.status_code in [200, 204]:
@@ -89,145 +79,6 @@ def update_user_reply_tracking(supabase_url, headers, user_email):
     except Exception as e:
         print(f"更新用户回复追踪失败: {e}")
         return False
-
-def get_task_progress_changes(supabase_url, headers, user_email, tasks_data):
-    """获取任务进度变化"""
-    try:
-        changes = []
-        
-        for task_data in tasks_data:
-            task_name = task_data.get('task_name', '')
-            new_progress = task_data.get('progress', 0)
-            
-            # 查询昨天的进度
-            yesterday = (date.today() - timedelta(days=1)).isoformat()
-            query_url = f"{supabase_url}/rest/v1/task_progress_snapshot?user_email=eq.{user_email}&task_name=eq.{task_name}&snapshot_date=eq.{yesterday}&select=*"
-            
-            response = requests.get(query_url, headers=headers, timeout=30)
-            
-            if response.status_code == 200:
-                snapshots = response.json()
-                if snapshots:
-                    old_progress = snapshots[0].get('progress_percentage', 0)
-                    progress_change = new_progress - old_progress
-                    
-                    changes.append({
-                        'task_name': task_name,
-                        'old_progress': old_progress,
-                        'new_progress': new_progress,
-                        'change': progress_change
-                    })
-        
-        return changes
-    except Exception as e:
-        print(f"获取任务进度变化失败: {e}")
-        return []
-
-def save_task_progress_snapshot(supabase_url, headers, user_email, tasks_data):
-    """保存任务进度快照"""
-    try:
-        today = date.today().isoformat()
-        
-        for task_data in tasks_data:
-            task_name = task_data.get('task_name', '')
-            progress = task_data.get('progress', 0)
-            action = task_data.get('action', 'update')
-            
-            status = "completed" if action == "complete" else ("paused" if action == "pause" else "active")
-            
-            # 先尝试更新
-            update_url = f"{supabase_url}/rest/v1/task_progress_snapshot?user_email=eq.{user_email}&task_name=eq.{task_name}&snapshot_date=eq.{today}"
-            update_data = {
-                "progress_percentage": progress,
-                "status": status
-            }
-            
-            response = requests.patch(update_url, headers=headers, json=update_data, timeout=30)
-            
-            if response.status_code not in [200, 204]:
-                # 如果更新失败，尝试创建
-                create_url = f"{supabase_url}/rest/v1/task_progress_snapshot"
-                create_data = {
-                    "user_email": user_email,
-                    "task_name": task_name,
-                    "progress_percentage": progress,
-                    "status": status,
-                    "snapshot_date": today
-                }
-                
-                requests.post(create_url, headers=headers, json=create_data, timeout=30)
-        
-        print("✅ 保存任务进度快照成功")
-        return True
-    except Exception as e:
-        print(f"保存任务进度快照失败: {e}")
-        return False
-
-def generate_ai_feedback(tasks_data, supabase_url, headers, user_email, deepseek_api_key):
-    """使用AI生成个性化反馈"""
-    try:
-        # 获取任务进度变化
-        progress_changes = get_task_progress_changes(supabase_url, headers, user_email, tasks_data)
-        
-        # 构建AI提示词
-        task_summary = []
-        for task in tasks_data:
-            task_summary.append({
-                'name': task.get('task_name', ''),
-                'progress': task.get('progress', 0),
-                'action': task.get('action', 'update')
-            })
-        
-        prompt = f"""你是一个温暖、鼓励的任务管理助手。请根据用户的任务更新情况，生成一段个性化的反馈。
-
-任务更新情况：
-{json.dumps(task_summary, ensure_ascii=False, indent=2)}
-
-进度变化：
-{json.dumps(progress_changes, ensure_ascii=False, indent=2) if progress_changes else "无历史数据"}
-
-要求：
-1. 语气温暖、鼓励，像朋友一样
-2. 根据进度变化给出具体的反馈（进步大→表扬，进度慢→鼓励，暂缓→理解）
-3. 根据任务数量给出建议（任务多→提醒合理安排，任务少→鼓励增加）
-4. 不要使用"继续加油"这种机械的话
-5. 控制在3-5句话以内
-6. 不要使用emoji，使用文字表达情感
-
-只返回反馈内容，不要其他说明。"""
-        
-        headers_ai = {
-            "Authorization": f"Bearer {deepseek_api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        data = {
-            "model": "deepseek-chat",
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.8
-        }
-        
-        response = requests.post(
-            "https://api.deepseek.com/v1/chat/completions",
-            headers=headers_ai,
-            json=data,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            feedback = result['choices'][0]['message']['content'].strip()
-            print(f"✅ AI反馈生成成功: {feedback[:50]}...")
-            return feedback
-        else:
-            print(f"❌ AI反馈生成失败: {response.status_code}")
-            return "很高兴看到你的更新！保持这个节奏，相信你能完成所有任务。"
-    
-    except Exception as e:
-        print(f"生成AI反馈失败: {e}")
-        return "感谢你的更新！继续保持，你做得很好。"
 
 def decode_str(s):
     """解码邮件头"""
@@ -428,7 +279,7 @@ def check_and_process_email_reply():
         print(f"\n✅ 找到最新回复（{latest_time}）")
         print(f"内容预览: {latest_reply[:100]}...")
         
-        # 提前定义 db_headers，因为后面的命令检测需要用到
+        # 数据库headers
         db_headers = {
             "apikey": supabase_key,
             "Authorization": f"Bearer {supabase_key}",
@@ -482,312 +333,60 @@ def check_and_process_email_reply():
                         # 执行购买
                         purchase_result = purchase_item(supabase_url, db_headers, email_username, item_data['item_code'], item_data)
         
-        # 使用 DeepSeek AI 解析回复
-        print("\n使用 AI 解析回复...")
+        # ============================================
+        # v4.1：使用任务编号系统处理任务操作
+        # ============================================
+        print("\n使用 v4.0 任务编号系统解析回复...")
         
-        headers = {
-            "Authorization": f"Bearer {deepseek_api_key}",
-            "Content-Type": "application/json"
-        }
+        # 解析任务操作
+        operations = parse_task_operations_v4(latest_reply, deepseek_api_key)
         
-        prompt = f"""请解析以下任务更新内容，提取任务信息。
-
-用户回复：
-{latest_reply}
-
-请以JSON格式返回，包含以下字段：
-- task_name: 任务名称
-- progress: 进度百分比(0-100)
-- quadrant: 象限(Q1/Q2/Q3/Q4)
-- action: 动作(update/pause/complete)
-
-重要规则：
-1. action字段的判断：
-   - 如果用户明确说"完成"、"已完成"、"做完了"、"finish"、"done"、"100%"，则action="complete"
-   - 如果用户说"暂缓"、"暂停"、"pause"，则action="pause"
-   - 其他情况action="update"
-
-2. progress字段的判断：
-   - 如果action="complete"，progress必须是100
-   - 如果用户说了具体百分比（如50%、80%），使用该百分比
-   - 如果没有说百分比但说了"完成"，progress=100
-   - 如果没有任何进度信息，progress=0
-
-3. 如果用户多次提到同一个任务已完成，一定要设置action="complete"和progress=100
-
-如果有多个任务，返回JSON数组。
-只返回JSON，不要其他内容。"""
-        
-        data = {
-            "model": "deepseek-chat",
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.7
-        }
-        
-        response = requests.post(
-            "https://api.deepseek.com/v1/chat/completions",
-            headers=headers,
-            json=data,
-            timeout=30
-        )
-        
-        if response.status_code != 200:
-            print(f"❌ AI 解析失败: {response.status_code}")
-            return False
-        
-        result = response.json()
-        ai_response = result['choices'][0]['message']['content'].strip()
-        
-        # 清理 markdown 代码块
-        ai_response = re.sub(r'```json\s*', '', ai_response)
-        ai_response = re.sub(r'```\s*$', '', ai_response)
-        ai_response = ai_response.strip()
-        
-        print(f"AI 解析结果: {ai_response}")
-        
-        # 解析 JSON
-        try:
-            tasks_data = json.loads(ai_response)
-            if not isinstance(tasks_data, list):
-                tasks_data = [tasks_data]
-        except:
-            print("❌ 无法解析 AI 返回的 JSON")
-            return False
-        
-        # 更新数据库
-        print("\n更新数据库...")
-        
-        feedback_content = "📊 任务更新反馈\n\n"
-        
-        # 用于累计经验值和金币
-        total_exp_gain = 0
-        total_coins_gain = 0
-        completed_tasks = 0
-        total_tasks = len(tasks_data)
-        has_q1_task = False
-        q1_all_completed = True
-        
-        for task_data in tasks_data:
-            task_name = task_data.get('task_name', '')
-            progress = task_data.get('progress', 0)
-            quadrant = task_data.get('quadrant', 'Q1')
-            action = task_data.get('action', 'update')
-            
-            # 确保所有字段都不是 None
-            if not task_name:
-                continue
-            
-            # 确保 quadrant 不是 None 并且格式正确
-            if not quadrant or not isinstance(quadrant, str) or not quadrant.strip():
-                quadrant = 'Q1'
-            else:
-                quadrant = quadrant.strip().upper()
-                # 如果不是 Q1-Q4 格式，默认为 Q1
-                if not (quadrant.startswith('Q') and len(quadrant) == 2 and quadrant[1] in '1234'):
-                    quadrant = 'Q1'
-            
-            # 确保 progress 是数字
-            try:
-                progress = int(progress) if progress else 0
-                # 限制在 0-100 范围内
-                progress = max(0, min(100, progress))
-            except:
-                progress = 0
-            
-            # 确保 action 不是 None
-            if not action or not isinstance(action, str):
-                action = 'update'
-            else:
-                action = action.strip().lower()
-                # 只允许特定的 action 值
-                if action not in ['update', 'pause', 'complete']:
-                    action = 'update'
-            
-            # 查询任务是否存在
-            query_url = f"{supabase_url}/rest/v1/tasks?user_email=eq.{email_username}&task_name=eq.{task_name}&select=*"
-            query_response = requests.get(query_url, headers=db_headers, timeout=30)
-            
-            quadrant_num = int(quadrant[1]) if quadrant.startswith('Q') else 1
-            
-            # 检查是否是Q1任务
-            if quadrant_num == 1:
-                has_q1_task = True
-                if action != "complete" and progress < 100:
-                    q1_all_completed = False
-            
-            if query_response.status_code == 200:
-                existing_tasks = query_response.json()
-                
-                if existing_tasks:
-                    # 更新现有任务
-                    task_id = existing_tasks[0]['id']
-                    old_progress = existing_tasks[0].get('progress_percentage', 0)
-                    progress_change = progress - old_progress
-                    
-                    update_url = f"{supabase_url}/rest/v1/tasks?id=eq.{task_id}"
-                    
-                    update_data = {
-                        "progress_percentage": progress,
-                        "quadrant": quadrant_num,
-                        "status": "completed" if action == "complete" else ("paused" if action == "pause" else "active"),
-                        "updated_at": datetime.now().isoformat()
-                    }
-                    
-                    update_response = requests.patch(update_url, headers=db_headers, json=update_data, timeout=30)
-                    
-                    if update_response.status_code in [200, 204]:
-                        # 计算经验值获得
-                        if progress_change > 0:
-                            exp_gain = calculate_exp_gain(progress_change, quadrant_num)
-                            total_exp_gain += exp_gain
-                        
-                        # 统计完成任务数
-                        if action == "complete" or progress >= 100:
-                            completed_tasks += 1
-                        
-                        status_emoji = "✅" if action == "complete" else ("⏸️" if action == "pause" else "🔄")
-                        filled = int(progress / 10)
-                        empty = 10 - filled
-                        progress_bar = "■" * filled + "□" * empty
-                        
-                        feedback_content += f"{status_emoji} {task_name}\n"
-                        feedback_content += f"   进度：[{progress_bar}] {progress}%\n"
-                        feedback_content += f"   象限: {quadrant}\n"
-                        
-                        # 显示经验值获得
-                        if progress_change > 0:
-                            feedback_content += f"   💫 +{exp_gain} EXP\n"
-                        
-                        feedback_content += "\n"
-                    else:
-                        print(f"更新任务失败: {update_response.status_code}")
-                else:
-                    # 创建新任务
-                    create_url = f"{supabase_url}/rest/v1/tasks"
-                    
-                    create_data = {
-                        "user_email": email_username,
-                        "task_name": task_name,
-                        "progress_percentage": progress,
-                        "quadrant": quadrant_num,
-                        "status": "active",
-                        "created_at": datetime.now().isoformat(),
-                        "updated_at": datetime.now().isoformat()
-                    }
-                    
-                    create_response = requests.post(create_url, headers=db_headers, json=create_data, timeout=30)
-                    
-                    if create_response.status_code in [200, 201]:
-                        # 新任务也计算经验值
-                        if progress > 0:
-                            exp_gain = calculate_exp_gain(progress, quadrant_num)
-                            total_exp_gain += exp_gain
-                        
-                        # 统计完成任务数
-                        if progress >= 100:
-                            completed_tasks += 1
-                        
-                        filled = int(progress / 10)
-                        empty = 10 - filled
-                        progress_bar = "■" * filled + "□" * empty
-                        
-                        feedback_content += f"🆕 {task_name}\n"
-                        feedback_content += f"   进度：[{progress_bar}] {progress}%\n"
-                        feedback_content += f"   象限: {quadrant}\n"
-                        
-                        # 显示经验值获得
-                        if progress > 0:
-                            feedback_content += f"   💫 +{exp_gain} EXP\n"
-                        
-                        feedback_content += "\n"
-                    else:
-                        print(f"创建任务失败: {create_response.status_code}")
-        
-        # 保存任务进度快照
-        save_task_progress_snapshot(supabase_url, db_headers, email_username, tasks_data)
-        
-        # 计算完成率和金币获得
-        completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
-        total_coins_gain = calculate_coins_gain(completion_rate)
-        
-        # 更新用户经验值和金币
-        print(f"\n更新游戏化数据: EXP +{total_exp_gain}, Coins +{total_coins_gain}")
-        update_result = update_user_exp_and_coins(
-            supabase_url, 
-            db_headers, 
-            email_username, 
-            total_exp_gain, 
-            total_coins_gain,
-            f"任务更新 ({completed_tasks}/{total_tasks}完成)"
-        )
-        
-        # 检查并更新Q1连击
-        q1_streak = check_and_update_q1_streak(supabase_url, db_headers, email_username, has_q1_task, q1_all_completed)
-        
-        # 添加经验值和金币总结
-        feedback_content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        feedback_content += "📈 本次收获：\n"
-        feedback_content += f"   💫 经验值：+{total_exp_gain} EXP\n"
-        feedback_content += f"   💰 金币：+{total_coins_gain} Coin\n"
-        feedback_content += f"   📊 完成率：{completion_rate:.0f}% ({completed_tasks}/{total_tasks})\n"
-        
-        if q1_streak > 0:
-            feedback_content += f"   🔥 Q1连击：{q1_streak}天\n"
-        
-        # 检查是否升级
-        if update_result and update_result.get('level_up'):
-            old_level = update_result.get('old_level')
-            new_level = update_result.get('new_level')
-            level_up_msg = format_level_up_message(old_level, new_level)
-            feedback_content += f"\n{level_up_msg}\n"
+        if not operations or len(operations) == 0:
+            print("⚠️ 未检测到任务操作")
+            feedback_content = "📊 任务更新反馈\n\n"
+            feedback_content += "未检测到任务操作。\n\n"
+            feedback_content += "💬 回复格式示例\n"
+            feedback_content += "Q1: 1完成; 2进度50%\n"
+            feedback_content += "Q2: 1暂缓\n"
+            feedback_content += "新增：写论文 Q1\n"
+            feedback_content += "暂缓任务1恢复到Q1\n"
         else:
-            # 如果没有升级，显示解锁进度激励
-            if update_result:
-                user_game_data_updated = get_user_gamification_data(supabase_url, db_headers, email_username)
-                if user_game_data_updated:
-                    unlock_progress_msg = format_unlock_progress_message(user_game_data_updated, total_exp_gain)
-                    feedback_content += unlock_progress_msg
-        
-        feedback_content += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        
-        # 使用 AI 生成个性化反馈
-        print("\n生成个性化反馈...")
-        
-        # 获取用户当前性格
-        user_game_data = get_user_gamification_data(supabase_url, db_headers, email_username)
-        current_personality = user_game_data.get('ai_personality', 'friendly') if user_game_data else 'friendly'
-        
-        # 获取进度变化
-        progress_changes = get_task_progress_changes(supabase_url, db_headers, email_username, tasks_data)
-        
-        # 根据性格生成反馈
-        personalized_feedback = generate_personality_feedback(
-            tasks_data, 
-            progress_changes, 
-            current_personality, 
-            deepseek_api_key
-        )
-        
-        feedback_content += f"\n{personalized_feedback}\n\n"
-        
-        # 如果有性格切换，添加切换消息
-        if personality_switch_result:
-            feedback_content += format_personality_switch_message(personality_switch_result) + "\n\n"
-        
-        # 如果有购买，添加购买结果
-        if purchase_result:
-            if purchase_result.get('success'):
-                feedback_content += format_purchase_result_message(purchase_result) + "\n\n"
-            else:
-                error_type = purchase_result.get('error_type', 'unknown')
-                error_data = purchase_result.get('error_data', {})
-                feedback_content += format_purchase_error_message(error_type, error_data) + "\n\n"
-        
-        feedback_content += "💡 如需修改计划，请访问：\n"
-        feedback_content += "https://github.com/Zihui1112/ai-email-coach/actions\n"
-        feedback_content += "手动运行「处理用户回复」workflow"
+            print(f"✅ 解析到 {len(operations)} 个任务操作")
+            
+            # 处理任务操作
+            operation_results = process_task_operations_v4(supabase_url, db_headers, email_username, operations)
+            
+            # 格式化反馈（v4.1：极简风格）
+            feedback_content = format_operation_feedback_v4_minimalist(operation_results)
+            
+            # 更新用户经验值和金币
+            total_exp_gain = operation_results.get('total_exp_gain', 0)
+            total_coins_gain = operation_results.get('total_coins_gain', 0)
+            
+            if total_exp_gain > 0 or total_coins_gain > 0:
+                print(f"\n更新游戏化数据: EXP +{total_exp_gain}, Coins +{total_coins_gain}")
+                update_result = update_user_exp_and_coins(
+                    supabase_url, 
+                    db_headers, 
+                    email_username, 
+                    total_exp_gain, 
+                    total_coins_gain,
+                    f"任务更新"
+                )
+                
+                # 检查是否升级
+                if update_result and update_result.get('level_up'):
+                    old_level = update_result.get('old_level')
+                    new_level = update_result.get('new_level')
+                    level_up_msg = format_level_up_message(old_level, new_level)
+                    feedback_content += f"\n{level_up_msg}\n"
+                else:
+                    # 如果没有升级，显示解锁进度激励
+                    if update_result:
+                        user_game_data_updated = get_user_gamification_data(supabase_url, db_headers, email_username)
+                        if user_game_data_updated:
+                            unlock_progress_msg = format_unlock_progress_message(user_game_data_updated, total_exp_gain)
+                            feedback_content += unlock_progress_msg
         
         # 更新用户回复追踪
         update_user_reply_tracking(supabase_url, db_headers, email_username)
@@ -804,6 +403,19 @@ def check_and_process_email_reply():
         
         # 显示连续回复天数
         feedback_content += f"\n\n💡 连续回复：{consecutive_reply_days}天 🔥"
+        
+        # 如果有性格切换，添加切换消息
+        if personality_switch_result:
+            feedback_content += "\n\n" + format_personality_switch_message(personality_switch_result)
+        
+        # 如果有购买，添加购买结果
+        if purchase_result:
+            if purchase_result.get('success'):
+                feedback_content += "\n\n" + format_purchase_result_message(purchase_result)
+            else:
+                error_type = purchase_result.get('error_type', 'unknown')
+                error_data = purchase_result.get('error_data', {})
+                feedback_content += "\n\n" + format_purchase_error_message(error_type, error_data)
         
         # 显示背包摘要
         inventory_summary = get_user_inventory_summary(supabase_url, db_headers, email_username)
@@ -859,6 +471,99 @@ def check_and_process_email_reply():
         import traceback
         traceback.print_exc()
         return False
+
+
+def format_operation_feedback_v4_minimalist(operation_results):
+    """
+    v4.1：格式化任务操作反馈消息（极简风格）
+    
+    参数:
+        operation_results: 操作结果（包含results, total_exp_gain, total_coins_gain）
+    
+    返回:
+        格式化的反馈消息
+    """
+    feedback = "📊 任务更新反馈\n\n"
+    
+    results = operation_results.get('results', [])
+    
+    for item in results:
+        op = item['operation']
+        result = item['result']
+        
+        if not result.get('success'):
+            # 操作失败
+            error = result.get('error', '未知错误')
+            feedback += f"❌ 操作失败：{error}\n\n"
+            continue
+        
+        # 操作成功
+        if op == 'complete':
+            task_name = result.get('task_name', '')
+            exp_gain = result.get('exp_gain', 0)
+            coins_gain = result.get('coins_gain', 0)
+            display_number = result.get('display_number', '')
+            
+            feedback += f"✅ {display_number}. {task_name} 完成\n"
+            feedback += f"   💫 +{exp_gain} EXP"
+            if coins_gain > 0:
+                feedback += f"  💰 +{coins_gain} Coin"
+            feedback += "\n\n"
+            
+        elif op == 'update':
+            task_name = result.get('task_name', '')
+            old_progress = result.get('old_progress', 0)
+            new_progress = result.get('new_progress', 0)
+            exp_gain = result.get('exp_gain', 0)
+            display_number = result.get('display_number', '')
+            
+            # 生成进度条
+            filled = int(new_progress / 10)
+            empty = 10 - filled
+            progress_bar = "■" * filled + "□" * empty
+            
+            feedback += f"🔄 {display_number}. {task_name} 进度更新\n"
+            feedback += f"   {old_progress}% → {new_progress}% [{progress_bar}]\n"
+            if exp_gain > 0:
+                feedback += f"   💫 +{exp_gain} EXP\n"
+            feedback += "\n"
+            
+        elif op == 'create':
+            task_name = result.get('task_name', '')
+            display_number = result.get('display_number', '')
+            quadrant = result.get('quadrant', 1)
+            
+            feedback += f"🆕 {display_number}. {task_name}\n"
+            feedback += f"   象限：Q{quadrant}\n\n"
+            
+        elif op == 'pause':
+            task_name = result.get('task_name', '')
+            old_display_number = result.get('old_display_number', '')
+            
+            feedback += f"⏸️ {old_display_number}. {task_name} 已暂缓\n\n"
+            
+        elif op == 'resume':
+            task_name = result.get('task_name', '')
+            new_display_number = result.get('new_display_number', '')
+            target_quadrant = result.get('target_quadrant', 1)
+            
+            feedback += f"🔄 {task_name} 已恢复\n"
+            feedback += f"   新编号：{new_display_number}\n"
+            feedback += f"   象限：Q{target_quadrant}\n\n"
+    
+    # 添加总结
+    total_exp_gain = operation_results.get('total_exp_gain', 0)
+    total_coins_gain = operation_results.get('total_coins_gain', 0)
+    
+    if total_exp_gain > 0 or total_coins_gain > 0:
+        feedback += "本次收获：\n"
+        if total_exp_gain > 0:
+            feedback += f"💫 +{total_exp_gain} EXP\n"
+        if total_coins_gain > 0:
+            feedback += f"💰 +{total_coins_gain} Coin\n"
+    
+    return feedback
+
 
 if __name__ == "__main__":
     success = check_and_process_email_reply()
