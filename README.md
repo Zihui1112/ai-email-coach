@@ -1,93 +1,205 @@
-# AI Email Coach
+# 📧 AI邮件教练
 
-一个完全自动化的任务管理系统，通过邮件和飞书提醒你复盘任务，使用 AI 解析你的回复并自动更新数据库。
+> 一个完全自动化的任务管理系统，通过邮件和AI帮助你管理任务、养成习惯、持续成长
 
-## ✨ 核心功能
+[![GitHub stars](https://img.shields.io/github/stars/Zihui1112/ai-email-coach?style=social)](https://github.com/Zihui1112/ai-email-coach/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/Zihui1112/ai-email-coach?style=social)](https://github.com/Zihui1112/ai-email-coach/network/members)
+[![GitHub issues](https://img.shields.io/github/issues/Zihui1112/ai-email-coach)](https://github.com/Zihui1112/ai-email-coach/issues)
+[![License](https://img.shields.io/github/license/Zihui1112/ai-email-coach)](LICENSE)
 
-- 📧 **每日复盘提醒**（22:00）- 自动发送任务清单到邮箱和飞书
-- ⏰ **每日跟进提醒**（23:00）- 提醒你尽快回复邮件
-- 🤖 **智能邮件解析**（23:30）- AI 自动解析回复并更新数据库
-- 📊 **周报月报**（自动生成）- 定期汇总任务完成情况
-- ☁️ **云端运行**（24/7）- 无需本地电脑，GitHub Actions 自动执行
+---
 
-## 🚀 快速开始
+## ✨ 核心特性
 
-### 1. 配置 GitHub Secrets
+- 📧 **每日复盘提醒** - 自动发送任务清单到邮箱和飞书
+- 🤖 **AI智能解析** - 自动理解你的回复并更新任务
+- 🎮 **游戏化系统** - 等级、经验值、金币、连击让任务管理更有趣
+- 📊 **四象限管理** - 科学的任务优先级管理方法
+- 📈 **成长报告** - 每周、每月自动生成故事化成长报告
+- ☁️ **云端运行** - 基于 GitHub Actions，24/7 自动运行
+- 🔒 **数据隔离** - 每个用户独立数据库，完全隔离
 
-在 GitHub 仓库设置中添加以下 Secrets：
+---
 
-- `SUPABASE_URL` - Supabase 项目 URL
-- `SUPABASE_KEY` - Supabase service_role key
-- `DEEPSEEK_API_KEY` - DeepSeek AI API key
-- `FEISHU_WEBHOOK_URL` - 飞书 Webhook URL
-- `EMAIL_163_USERNAME` - 163 邮箱地址
-- `EMAIL_163_PASSWORD` - 163 邮箱授权码
+## 🎯 快速开始
 
-### 2. 初始化数据库
+### 1. Fork 项目
 
-在 Supabase 中执行 `database_setup.sql` 创建 tasks 表。
+点击右上角的 `Fork` 按钮，将项目复制到你的 GitHub 账号
 
-### 3. 开始使用
+### 2. 配置服务
 
-系统会自动在每天 22:00 发送复盘提醒，你只需要回复邮件即可！
+注册以下免费服务：
+- [Supabase](https://supabase.com) - 数据库
+- [DeepSeek](https://platform.deepseek.com) - AI 解析
+- 163 邮箱 - 邮件收发
 
-## 📅 每日时间安排
+### 3. 配置 GitHub Secrets
+
+在你的仓库中添加以下 Secrets：
+- `SUPABASE_URL`
+- `SUPABASE_KEY`
+- `DEEPSEEK_API_KEY`
+- `EMAIL_163_USERNAME`
+- `EMAIL_163_PASSWORD`
+- `FEISHU_WEBHOOK_URL`（可选）
+
+### 4. 初始化数据库
+
+在 Supabase SQL Editor 中执行 `database_setup.sql`
+
+### 5. 开始使用
+
+等待今晚 21:30 收到第一封邮件，回复邮件即可管理任务！
+
+📖 **详细步骤请查看** → [部署指南.md](部署指南.md)
+
+---
+
+## 📅 自动化时间表
 
 | 时间 | 任务 | 说明 |
 |------|------|------|
-| 22:00 | 每日复盘提醒 | 发送任务清单，提示复盘和制定计划 |
-| 23:00 | 每日跟进提醒 | 提醒尽快回复（如已回复可忽略）|
-| 23:30 | 检查邮件回复 | AI 解析回复并更新数据库 |
+| 21:30 | 每日复盘 | 发送任务清单 + 智能提示 |
+| 23:00 | 每日跟进 | 提醒尽快回复 |
+| 23:30 | 检查回复 | AI 解析并更新任务 |
+| 周日 20:00 | 周报 | 故事化成长报告 |
+| 月末 20:00 | 月报 | 史诗风格月度总结 |
 
-## 📧 如何回复邮件
+---
 
-**重要**：必须回复标题包含以下内容的邮件：
-- 回复：📊 每日复盘提醒
-- 回复：📊 每日跟进提醒
+## 💬 使用示例
 
-**回复示例**：
+### 回复邮件管理任务
+
 ```
-完成了用户登录功能90%，这是Q1任务
-明天做数据库设计Q2任务
+Q1: 1完成; 2进度50%
+Q2: 1暂缓
+新增：写论文 Q1
+暂缓任务1恢复到Q1
 ```
 
-AI 会自动识别任务名称、进度、象限和动作。
+AI 会自动理解你的意图并更新任务！
+
+---
+
+## 🎮 游戏化系统
+
+### 等级系统
+- LV1-20 等级系统
+- 完成任务获得经验值
+- 不同象限任务经验值倍率不同
+
+### 四象限管理
+- Q1 🔴 重要且紧急 (EXP x2.0)
+- Q2 🟡 重要非紧急 (EXP x1.5)
+- Q3 🔵 紧急非重要 (EXP x1.0)
+- Q4 ⚪ 非紧急非重要 (EXP x0.5)
+
+### 金币系统
+- 完成任务获得金币
+- 购买商店道具（LV13+解锁）
+- 提升效率和体验
+
+### 连击系统
+- 连续完成 Q1 任务获得连击
+- 连续回复邮件获得奖励
+- 达到里程碑获得特殊奖励
+
+---
+
+## 📊 功能特性
+
+### 智能提示
+根据你的等级显示相关提示和建议
+
+### AI 性格系统
+- 🌟 友好型 (LV1+)
+- 💼 专业型 (LV4+)
+- 🔥 严格型 (LV8+)
+- 💀 毒舌型 (LV13+)
+
+### 商店系统 (LV13+)
+购买道具提升效率：
+- 🛡️ 惩罚减免券
+- ⚡ 经验加速卡
+- 💰 金币翻倍卡
+- 🎯 专注加成卡
+- 更多道具...
+
+### 成长报告
+- 📖 故事化周报
+- 📜 史诗风格月报
+- 📊 ASCII 图表可视化
+- 💡 智能分析和建议
+
+---
 
 ## 🛠️ 技术栈
 
-- **后端**: Python 3.10
-- **数据库**: Supabase (PostgreSQL)
+- **语言**: Python 3.10+
+- **数据库**: PostgreSQL (Supabase)
 - **AI**: DeepSeek API
-- **通知**: 163 邮箱 + 飞书
-- **部署**: GitHub Actions
-- **邮件协议**: POP3 + SMTP
+- **自动化**: GitHub Actions
+- **通知**: SMTP + 飞书 Webhook
 
-## 📂 项目结构
+---
 
-```
-ai-email-coach/
-├── .github/workflows/     # GitHub Actions 工作流
-├── scripts/               # Python 脚本
-├── database_setup.sql     # 数据库初始化
-├── requirements.txt       # Python 依赖
-└── README.md             # 项目说明
-```
+## 📖 文档
 
-## 📖 详细文档
+- [部署指南.md](部署指南.md) - 📦 完整部署步骤
+- [用户手册.md](用户手册.md) - 📖 功能说明和使用技巧
+- [开发文档.md](开发文档.md) - 🛠️ 自定义开发指南
 
-- [使用指南.md](使用指南.md) - 完整使用说明
-- [完全自动化使用指南.md](完全自动化使用指南.md) - 自动化流程详解
+---
 
-## 🔗 相关链接
+## 🔒 数据安全
 
-- GitHub Actions: https://github.com/Zihui1112/ai-email-coach/actions
-- Supabase: https://supabase.com
-- DeepSeek API: https://platform.deepseek.com
+- ✅ 每个用户独立的 Supabase 数据库
+- ✅ 所有密钥存储在 GitHub Secrets
+- ✅ 使用 Supabase RLS 行级安全策略
+- ✅ 用户之间数据完全隔离
+- ✅ 不收集任何用户数据
 
-## 📝 License
-
-MIT License
+---
 
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
+
+1. Fork 项目
+2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 创建 Pull Request
+
+---
+
+## 📝 License
+
+本项目采用 MIT License - 查看 [LICENSE](LICENSE) 文件了解详情
+
+---
+
+## 🌟 Star History
+
+如果这个项目对你有帮助，请给个 Star ⭐️
+
+---
+
+## 📞 联系方式
+
+- 提交 Issue: [GitHub Issues](https://github.com/Zihui1112/ai-email-coach/issues)
+- 项目主页: [GitHub](https://github.com/Zihui1112/ai-email-coach)
+
+---
+
+## 🎉 致谢
+
+感谢所有贡献者和使用者！
+
+---
+
+**开始你的成长之旅** → [部署指南.md](部署指南.md)
+
+祝你使用愉快！🚀

@@ -88,6 +88,48 @@ def update_no_reply_days(supabase_url, headers, user_email, reply_status):
         print(f"更新未回复天数失败: {e}")
         return 0
 
+def generate_smart_tips(user_level):
+    """根据用户等级生成智能提示"""
+    tips = "\n\n💡 智能提示\n"
+    
+    if user_level <= 3:
+        # 新手期提示
+        tips += "• 优先完成Q1任务，获得2倍经验值\n"
+        tips += "• 每天回复邮件，建立连击获得奖励\n"
+        tips += "• 查看完整手册：https://github.com/你的用户名/ai-email-coach/blob/main/用户手册.md"
+    
+    elif user_level <= 7:
+        # 进阶期提示
+        tips += "• 平衡Q1和Q2任务，避免紧急任务堆积\n"
+        tips += "• 已解锁专业型性格，输入\"切换性格：专业型\"体验\n"
+        tips += "• 积累金币为LV13商店解锁做准备"
+    
+    elif user_level <= 12:
+        # 中级期提示
+        tips += "• 已解锁严格型性格，需要督促时可切换\n"
+        tips += "• 合理使用暂缓功能，避免任务过载\n"
+        tips += "• 距离商店解锁还差几级，继续加油！"
+    
+    elif user_level <= 15:
+        # 高级期提示
+        tips += "• 🛒 商店已解锁！可购买道具提升效率\n"
+        tips += "• 推荐道具：拖延对冲券、经验加速卡\n"
+        tips += "• 已解锁毒舌型性格，需要刺激时可切换"
+    
+    elif user_level <= 19:
+        # 专家期提示
+        tips += "• 已解锁高级道具，合理使用提升效率\n"
+        tips += "• 使用数据透视镜查看详细分析报告\n"
+        tips += "• 距离最高等级LV20还差几级！"
+    
+    else:
+        # 最高等级
+        tips += "• 🎉 恭喜达到最高等级LV20！\n"
+        tips += "• 所有功能已解锁，尽情使用吧\n"
+        tips += "• 继续保持，追求更高的完成率和连击记录"
+    
+    return tips
+
 def generate_personalized_greeting(consecutive_no_reply_days, is_weekend):
     """生成个性化问候语"""
     today = datetime.now()
@@ -261,18 +303,9 @@ def send_daily_review():
             if punishment_result:
                 content += "\n\n" + format_punishment_message(punishment_result)
             
-            # 添加性格切换提示（简化）
+            # 添加智能提示（根据等级显示相关手册内容）
             level = user_game_data.get('level', 1)
-            if level >= 4:
-                content += "\n\n💡 可用功能：切换AI性格"
-                if level >= 8:
-                    content += "（专业型/严格型）"
-                if level >= 13:
-                    content += "（专业型/严格型/毒舌型）"
-            
-            # 添加商店提示（简化）
-            if level >= 13:
-                content += "\n🛒 商店已解锁（格式：购买：道具名）"
+            content += generate_smart_tips(level)
             
             # 显示背包
             inventory_summary = get_user_inventory_summary(supabase_url, headers, user_email)
